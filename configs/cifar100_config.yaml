@@ -1,0 +1,10 @@
+num_tasks: 10
+batch_size: 64
+epochs_per_task: 2
+out_dim: 384
+lr: 0.1
+margin: 0.1
+beta: 0.5
+memory_size: 1000
+anchors_path: anchors/cifar100_anchors.pkl
+checkpoints_dir: checkpoints
