@@ -312,7 +312,8 @@ def main(cfg):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='configs/cifar100_full.yaml')
+    parser.add_argument('--config', type=str, default='configs/cifar100_config.yaml')
+    parser.add_argument('--anchors-path', type=str, default='anchors/cifar100_anchors.pkl')
     args = parser.parse_args()
     cfg = yaml.safe_load(open(args.config))
     main(cfg)
