@@ -316,4 +316,18 @@ if __name__ == "__main__":
     parser.add_argument('--anchors-path', type=str, default='anchors/cifar100_anchors.pkl')
     args = parser.parse_args()
     cfg = yaml.safe_load(open(args.config))
+    cfg['lr'] = float(cfg['lr'])
+    cfg['momentum'] = float(cfg['momentum'])
+    cfg['weight_decay'] = float(cfg['weight_decay'])
+    cfg['margin'] = float(cfg['margin'])
+    cfg['beta'] = float(cfg['beta'])
+
+    cfg['batch_size'] = int(cfg['batch_size'])
+    cfg['epochs_per_task'] = int(cfg['epochs_per_task'])
+    cfg['num_tasks'] = int(cfg['num_tasks'])
+    cfg['memory_size'] = int(cfg['memory_size'])
+    cfg['replay_batch'] = int(cfg['replay_batch'])
+
+    cfg['replay_on'] = bool(cfg['replay_on'])
+    cfg['pretrained_backbone'] = bool(cfg['pretrained_backbone'])
     main(cfg)
