@@ -4,3 +4,5 @@ checkpoints/
 anchors/*.pkl
 *.ipynb_checkpoints
 .venv/
+data/
+anchors/
