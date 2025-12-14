@@ -1,4 +1,3 @@
-# Bổ sung hàm này vào script của bạn
 import argparse
 import pickle
 from pathlib import Path
@@ -12,41 +11,31 @@ from tqdm import tqdm
 
 
 def analyze_anchors(anchors, selected_labels):
-    """
-    Tính và in ra Ma trận Độ tương đồng Cosine giữa các vector anchors đã chọn.
-    """
-    print("\n--- PHÂN TÍCH ĐỘ TƯƠNG ĐỒNG COSINE ---")
+    print("\n--- ANALYZE COSINE SIMILARITY---")
 
-    # 1. Trích xuất các vector và nhãn đã chọn
     selected_anchors = {lbl: anchors[lbl] for lbl in selected_labels if lbl in anchors}
     labels = list(selected_anchors.keys())
 
-    # Chuyển đổi các vector numpy thành tensor PyTorch để tính toán
     vectors = [torch.from_numpy(selected_anchors[lbl]).float() for lbl in labels]
     num_labels = len(labels)
 
-    # Khởi tạo ma trận kết quả (sử dụng numpy để hiển thị đẹp hơn)
     similarity_matrix = np.zeros((num_labels, num_labels))
 
-    # 2. Tính toán Độ tương đồng Cosine
     for i in range(num_labels):
         for j in range(i, num_labels):
-            # cosine_similarity cần đầu vào là (tensor A, tensor B, dim)
-            # dim=0 vì đây là vector 1D
+
             sim = cosine_similarity(vectors[i].unsqueeze(0), vectors[j].unsqueeze(0)).item()
             similarity_matrix[i, j] = sim
-            similarity_matrix[j, i] = sim  # Ma trận đối xứng
+            similarity_matrix[j, i] = sim
 
-    # 3. Hiển thị Ma trận (Sử dụng Pandas để định dạng đẹp, nếu bạn có)
     try:
         import pandas as pd
         df = pd.DataFrame(similarity_matrix, index=labels, columns=labels)
-        # Giới hạn số chữ số thập phân
         df = df.apply(lambda x: pd.Series([f'{v:.4f}' for v in x], index=df.columns))
-        print("Ma trận Độ tương đồng Cosine (Giá trị gần 1 là tương đồng cao):")
+        print("Cosine Similarity Matrix:")
         print(df)
     except ImportError:
-        print("Cần cài đặt thư viện 'pandas' để hiển thị ma trận đẹp hơn.")
+        print("Installing pandas for better display...")
         print(labels)
         print(similarity_matrix)
 
@@ -98,4 +87,4 @@ if __name__ == "__main__":
             analyze_anchors(anchors, selected_labels_group)
 
         except FileNotFoundError:
-            print(f"Lỗi: Không tìm thấy tệp anchors tại {args.out}. Hãy đảm bảo build_anchors đã chạy thành công.")
+            print(f"Error: Can't find anchors file at {args.out}.")

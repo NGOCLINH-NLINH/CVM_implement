@@ -261,21 +261,7 @@ def main(cfg):
         print("Saved checkpoint for task", t)
 
         # Evaluate: accuracy on current task test loader using nearest anchor among seen anchors
-        anchors_seen = anchors_tensor[seen_inds].to(device)
-        correct = 0
-        total = 0
-        with torch.no_grad():
-            for images, labels in test_loader:
-                images = images.to(device)
-                labels = labels.to(device)
-                emb = model(images)
-                sims = emb @ anchors_seen.t()
-                preds = sims.argmax(dim=1).cpu().numpy()
-                global_preds = [seen_inds[p] for p in preds]
-                true = labels.cpu().numpy()
-                correct += sum([1 for i in range(len(true)) if global_preds[i] == true[i]])
-                total += len(true)
-        acc_t = correct / total if total > 0 else 0.0
+        acc_t = evaluate_all_seen(model, test_full, cur_inds, anchors_tensor, anchor_keys, device)
         print(f"Task {t} accuracy on current test: {acc_t:.4f}")
         task_accs.append(acc_t)
 
