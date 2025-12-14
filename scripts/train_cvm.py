@@ -179,10 +179,16 @@ def main(cfg):
         old_inds = [i for i in seen_inds]
         seen_inds += cur_inds
 
+        total_steps = cfg['epochs_per_task'] * len(train_loader)
+        pbar = tqdm(
+            total=total_steps,
+            desc=f"Task {t}",
+            dynamic_ncols=True
+        )
+
         # Training loop per epoch
         for epoch in range(cfg['epochs_per_task']):
             model.train()
-            pbar = tqdm(train_loader, desc=f"Task {t} Epoch {epoch}")
             for images, labels in pbar:
                 images_cuda = images.to(device)
                 labels_cuda = labels.to(device)  # global labels 0..99
@@ -242,9 +248,17 @@ def main(cfg):
                 # add to buffer
                 buffer.add_batch(images, labels)
 
-                pbar.set_postfix({'loss': float(loss.item()), 'Lm': float(Lm.item()), 'Ld': float(Ld.item())})
+                pbar.update(1)
+                pbar.set_postfix({
+                    "epoch": epoch,
+                    "loss": f"{loss.item():.4f}",
+                    "Lm": f"{Lm.item():.4f}",
+                    "Ld": f"{Ld.item():.4f}"
+                })
 
             scheduler.step()
+
+        pbar.close()
 
         # after finishing task t
         prev_model = copy.deepcopy(model).eval().to(device)
