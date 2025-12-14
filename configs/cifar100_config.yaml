@@ -1,12 +1,12 @@
 num_tasks: 10
 batch_size: 32
-epochs_per_task: 50
+epochs_per_task: 80
 out_dim: 384
 lr: 0.1
 momentum: 0.9
 weight_decay: 5e-4
 margin: 0.1
-beta: 1
+beta: 2.5
 memory_size: 2000
 replay_batch: 32
 replay_lambda: 1.0
