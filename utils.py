@@ -4,10 +4,10 @@ import torch.nn.functional as F
 import numpy as np
 import random
 import pickle
-from collections import deque
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score
-import os
+
+import torchvision.transforms as transforms
+import torchvision.datasets as datasets
+from torch.utils.data import DataLoader, Subset
 
 
 def load_anchors(path, device='cpu'):
@@ -73,43 +73,44 @@ def semantic_distance_loss(emb, emb_prev, old_anchor_matrix):
     return F.mse_loss(d_t, d_prev)
 
 
-def nearest_anchor_predict(model, dataloader, anchors_tensor, anchor_keys, device='cuda'):
-    model.eval()
-    y_true = []
-    y_pred = []
-    idx_map = {k: i for i, k in enumerate(anchor_keys)}
-    with torch.no_grad():
-        anchors = anchors_tensor.to(device)
-        for images, labels in dataloader:
-            images = images.to(device)
-            emb = model(images)
-            sims = emb @ anchors.t()
-            idx = sims.argmax(dim=1).cpu().numpy()
-            preds = [anchor_keys[i] for i in idx]
-            y_pred.extend(preds)
-            # labels are integer indices global; convert to label string using anchor_keys
-            y_true.extend([anchor_keys[l] for l in labels.numpy()])
-    # compute accuracy by mapping to indices
-    y_true_idx = [idx_map[y] for y in y_true]
-    y_pred_idx = [idx_map[y] for y in y_pred]
-    acc = accuracy_score(y_true_idx, y_pred_idx)
-    return acc
+def make_cifar100_tasks(num_tasks, batch_size, augment=True):
+    if augment:
+        transform_train = transforms.Compose([
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
+        ])
+    else:
+        transform_train = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
+        ])
+    transform_test = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
+    ])
+    train_full = datasets.CIFAR100(root="data", train=True, download=True, transform=transform_train)
+    test_full = datasets.CIFAR100(root="data", train=False, download=True, transform=transform_test)
+    classes = train_full.classes
+    num_classes = len(classes)
+    per_task = num_classes // num_tasks
+    tasks = []
+    for t in range(num_tasks):
+        start = t * per_task
+        end = start + per_task if t < num_tasks - 1 else num_classes
+        train_idx = [i for i, (_, lbl) in enumerate(train_full) if start <= lbl < end]
+        test_idx = [i for i, (_, lbl) in enumerate(test_full) if start <= lbl < end]
+        train_subset = Subset(train_full, train_idx)
+        test_subset = Subset(test_full, test_idx)
+        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=2)
+        test_loader = DataLoader(test_subset, batch_size=batch_size, shuffle=False, num_workers=2)
+        tasks.append((train_loader, test_loader, list(range(start, end))))
+    return tasks, classes
 
 
-def compute_forgetting(history_accs):
-    T = len(history_accs)
-    final = history_accs[-1]
-    forgetting = 0.0
-    for i in range(T - 1):
-        acc_i_at_train = history_accs[i][i] if len(history_accs[i]) > i else 0.0
-        acc_i_final = final[i] if i < len(final) else 0.0
-        forgetting += (acc_i_at_train - acc_i_final)
-    return forgetting / max(1, T - 1)
-
-
-def linear_probing_score(model, train_features, train_labels, test_features, test_labels):
-    # use sklearn logistic regression on L2-normalized features (numpy)
-    clf = LogisticRegression(max_iter=1000, multi_class='multinomial', solver='saga')
-    clf.fit(train_features, train_labels)
-    preds = clf.predict(test_features)
-    return accuracy_score(test_labels, preds)
+def set_seed(seed=1234):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)

@@ -11,47 +11,11 @@ import torchvision.datasets as datasets
 from torch.utils.data import DataLoader, Subset
 import numpy as np
 from models.resnet_cvm import ResNetCVM
-from utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss
+from utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, set_seed
 from sklearn.linear_model import LogisticRegression
 from tqdm import tqdm
 import random
 import pickle
-
-
-def make_cifar100_tasks(num_tasks, batch_size, augment=True):
-    if augment:
-        transform_train = transforms.Compose([
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
-        ])
-    else:
-        transform_train = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
-        ])
-    transform_test = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
-    ])
-    train_full = datasets.CIFAR100(root="data", train=True, download=True, transform=transform_train)
-    test_full = datasets.CIFAR100(root="data", train=False, download=True, transform=transform_test)
-    classes = train_full.classes
-    num_classes = len(classes)
-    per_task = num_classes // num_tasks
-    tasks = []
-    for t in range(num_tasks):
-        start = t * per_task
-        end = start + per_task if t < num_tasks - 1 else num_classes
-        train_idx = [i for i, (_, lbl) in enumerate(train_full) if start <= lbl < end]
-        test_idx = [i for i, (_, lbl) in enumerate(test_full) if start <= lbl < end]
-        train_subset = Subset(train_full, train_idx)
-        test_subset = Subset(test_full, test_idx)
-        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=2)
-        test_loader = DataLoader(test_subset, batch_size=batch_size, shuffle=False, num_workers=2)
-        tasks.append((train_loader, test_loader, list(range(start, end))))
-    return tasks, classes
 
 
 def evaluate_all_seen(model, test_full, seen_indices, anchors_tensor, anchor_keys, device):
@@ -131,11 +95,20 @@ def zero_shot_eval(model, anchors_tensor, unseen_indices, test_full, device):
     return correct / total if total > 0 else 0.0
 
 
-def set_seed(seed=1234):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+def compute_forgetting(eval_history):
+    """
+    eval_history[t][i]: accuracy of task i after training task t
+    """
+    T = len(eval_history)
+    forgetting = []
+
+    for i in range(T - 1):  # last task has no forgetting
+        acc_i_over_time = [eval_history[t][i] for t in range(i, T)]
+        max_acc = max(acc_i_over_time[:-1])  # before final
+        final_acc = acc_i_over_time[-1]
+        forgetting.append(max_acc - final_acc)
+
+    return sum(forgetting) / len(forgetting), forgetting
 
 
 def main(cfg):
@@ -308,6 +281,9 @@ def main(cfg):
     # compute forgetting approx
     # convert eval_history into matrix: eval_history[after_task_t][task_i]
     print("Eval history (summary):", [[round(x, 3) for x in row] for row in eval_history])
+    fw_score, fw_per_task = compute_forgetting(eval_history)
+    print("Forgetting score (FW):", round(fw_score, 4))
+    print("Per-task forgetting:", [round(f, 4) for f in fw_per_task])
 
 
 if __name__ == "__main__":
