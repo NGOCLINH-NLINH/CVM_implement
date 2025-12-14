@@ -162,7 +162,7 @@ def main(cfg):
         # Training loop per epoch
         for epoch in range(cfg['epochs_per_task']):
             model.train()
-            for images, labels in pbar:
+            for images, labels in train_loader:
                 images_cuda = images.to(device)
                 labels_cuda = labels.to(device)  # global labels 0..99
 
