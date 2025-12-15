@@ -1,8 +1,8 @@
 num_tasks: 10
 batch_size: 32
-epochs_per_task: 80
+epochs_per_task: 100
 out_dim: 384
-lr: 0.1
+lr: 0.05
 momentum: 0.9
 weight_decay: 5e-4
 margin: 0.1
