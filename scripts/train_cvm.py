@@ -314,7 +314,12 @@ def main(cfg):
 
     # compute forgetting approx
     # convert eval_history into matrix: eval_history[after_task_t][task_i]
-    print("Eval history (summary):", [[round(x, 3) for x in row] for row in eval_history])
+    print(
+        "Eval history (summary):",
+        [[round(x, 3) if x is not None else "-" for x in row]
+         for row in eval_history]
+    )
+
     fw_score, fw_per_task = compute_forgetting(eval_history)
     print("Forgetting score (FW):", round(fw_score, 4))
     print("Per-task forgetting:", [round(f, 4) for f in fw_per_task])
