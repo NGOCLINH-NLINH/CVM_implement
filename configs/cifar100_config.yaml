@@ -5,11 +5,11 @@ out_dim: 384
 lr: 0.05
 momentum: 0.9
 weight_decay: 5e-4
-margin: 0.1
+margin: 0.2
 beta: 4
 memory_size: 2000
 replay_batch: 32
-replay_lambda: 1.5
+replay_lambda: 1
 replay_on: true
 seed: 1234
 anchors_path: anchors/cifar100_anchors.pkl
