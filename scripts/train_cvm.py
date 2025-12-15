@@ -41,6 +41,30 @@ def evaluate_all_seen(model, test_full, seen_indices, anchors_tensor, anchor_key
     return correct / total if total > 0 else 0.0
 
 
+def evaluate_task_full_anchors(model, test_full, task_class_inds, anchors_tensor, anchor_keys, device):
+    # Evaluate accuracy of ONE task using FULL anchor set
+    idxs = [i for i, (_, lbl) in enumerate(test_full) if lbl in task_class_inds]
+    if len(idxs) == 0:
+        return 0.0
+    loader = DataLoader(Subset(test_full, idxs), batch_size=128, shuffle=False, num_workers=2)
+    model.eval()
+    anchors = anchors_tensor.to(device)
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for images, labels in loader:
+            images = images.to(device)
+            labels = labels.to(device)
+
+            emb = model(images)
+            sims = emb @ anchors.t()
+            preds = sims.argmax(dim=1)
+
+            correct += (preds == labels).sum().item()
+            total += labels.size(0)
+    return correct / total if total > 0 else 0.0
+
+
 def linear_probe_all(model, train_full, test_full, seen_indices, device, out_dim):
     # freeze model, compute features for train and test over seen classes
     model.eval()
@@ -268,9 +292,19 @@ def main(cfg):
         # store evaluation snapshot (for forgetting computation)
         # compute accuracy per task on their test sets
         per_task_accs = []
-        for i_task, (_, t_loader, t_classes) in enumerate(tasks):
-            # test accuracy of task i_task after finishing current t
-            acc_i = evaluate_all_seen(model, t_loader.dataset, t_classes, anchors_tensor, anchor_keys, device)
+        for i_task, (_, _, t_classes) in enumerate(tasks):
+            if i_task > t:
+                per_task_accs.append(None)
+                continue
+
+            acc_i = evaluate_task_full_anchors(
+                model,
+                test_full,
+                t_classes,
+                anchors_tensor,
+                anchor_keys,
+                device
+            )
             per_task_accs.append(acc_i)
         eval_history.append(per_task_accs)
 
