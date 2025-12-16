@@ -1,12 +1,12 @@
 num_tasks: 10
 batch_size: 32
-epochs_per_task: 100
+epochs_per_task: 150
 out_dim: 384
-lr: 0.05
+lr: 0.1
 momentum: 0.9
 weight_decay: 5e-4
 margin: 0.1
-beta: 3.5
+beta: 4
 memory_size: 2000
 replay_batch: 32
 replay_lambda: 1
@@ -15,4 +15,4 @@ seed: 1234
 anchors_path: anchors/cifar100_anchors.pkl
 checkpoints_dir: checkpoints
 pretrained_backbone: True
-milestones: [50, 75]
+milestones: [75, 100]
