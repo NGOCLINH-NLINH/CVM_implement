@@ -7,7 +7,7 @@ momentum: 0.9
 weight_decay: 5e-4
 margin: 0.1
 beta: 4.5
-memory_size: 2000
+memory_size: 500
 replay_batch: 32
 replay_lambda: 1
 replay_on: true

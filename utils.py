@@ -21,7 +21,7 @@ def load_anchors(path, device='cpu'):
 
 
 class ReservoirBuffer:
-    def __init__(self, capacity=2000, seed=42):
+    def __init__(self, capacity=500, seed=42):
         self.capacity = capacity
         self.n_seen = 0
         self.buffer = []
