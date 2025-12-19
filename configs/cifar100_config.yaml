@@ -9,7 +9,7 @@ margin: 0.1
 beta: 4.5
 memory_size: 2000
 replay_batch: 32
-replay_lambda: 0.5
+replay_lambda: 1
 replay_on: true
 seed: 1234
 anchors_path: anchors/cifar100_anchors.pkl
