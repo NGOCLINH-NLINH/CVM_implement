@@ -161,9 +161,6 @@ def main(cfg):
     model = ResNetCVM(out_dim=cfg['out_dim'], pretrained=cfg.get('pretrained_backbone', False)).to(device)
     prev_model = None
 
-    optimizer = optim.SGD(model.parameters(), lr=cfg['lr'], momentum=cfg['momentum'], weight_decay=cfg['weight_decay'])
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=cfg.get('milestones', [30, 45]), gamma=0.1)
-
     buffer = ReservoirBuffer(capacity=cfg['memory_size'])
 
     seen_inds = []
@@ -175,6 +172,10 @@ def main(cfg):
         cur_inds = class_inds
         old_inds = [i for i in seen_inds]
         seen_inds += cur_inds
+
+        optimizer = optim.SGD(model.parameters(), lr=cfg['lr'], momentum=cfg['momentum'],
+                              weight_decay=cfg['weight_decay'])
+        scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=cfg.get('milestones', [30, 45]), gamma=0.1)
 
         total_steps = cfg['epochs_per_task'] * len(train_loader)
         pbar = tqdm(
