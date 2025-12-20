@@ -1,6 +1,6 @@
 num_tasks: 10
 batch_size: 32
-epochs_per_task: 120
+epochs_per_task: 100
 out_dim: 384
 lr: 0.01
 momentum: 0.9
