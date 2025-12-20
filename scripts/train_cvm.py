@@ -232,7 +232,11 @@ def main(cfg):
                         emb_buf = model(buf_imgs)
                         pos_buf = anchors_tensor[buf_labels].to(device)
                         # choose negatives from all seen classes for buffer items
-                        neg_idx_buf = torch.randint(0, anchors_tensor.shape[0], (emb_buf.shape[0],), device=device)
+                        neg_idx_buf = []
+                        for lbl in buf_labels.cpu().numpy():
+                            possible_negs = [i for i in range(anchors_tensor.shape[0]) if i != lbl]
+                            neg_idx_buf.append(random.choice(possible_negs))
+                        neg_idx_buf = torch.tensor(neg_idx_buf, device=device)
                         neg_buf = anchors_tensor[neg_idx_buf].to(device)
                         Lm_buf = triplet_loss_emb(emb_buf, pos_buf, neg_buf, margin=cfg['margin'])
                         # no Ld for replay for simplicity, or could compute with prev_model
