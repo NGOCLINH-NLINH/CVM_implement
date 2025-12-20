@@ -5,7 +5,7 @@ out_dim: 384
 lr: 0.01
 momentum: 0.9
 weight_decay: 5e-4
-margin: 0.2
+margin: 0.1
 beta: 5
 memory_size: 2000
 replay_batch: 32

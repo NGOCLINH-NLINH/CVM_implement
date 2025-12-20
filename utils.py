@@ -63,11 +63,8 @@ def triplet_loss_emb(emb, pos_emb, neg_emb, margin=0.1):
 def semantic_distance_loss(emb, emb_prev, old_anchor_matrix):
     if old_anchor_matrix is None or old_anchor_matrix.shape[0] == 0:
         return torch.tensor(0.0, device=emb.device)
-    emb = F.normalize(emb, p=2, dim=1)
-    emb_prev = F.normalize(emb_prev, p=2, dim=1)
-    anchor = F.normalize(old_anchor_matrix, p=2, dim=1)
-    cos_t = emb @ anchor.t()
-    cos_prev = emb_prev @ anchor.t()
+    cos_t = emb @ old_anchor_matrix.t()
+    cos_prev = emb_prev @ old_anchor_matrix.t()
     d_t = 1.0 - cos_t
     d_prev = 1.0 - cos_prev
     return F.mse_loss(d_t, d_prev)
@@ -114,3 +111,24 @@ def set_seed(seed=1234):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
+
+def triplet_loss_k_negs(emb, pos_emb, neg_embs, margin=0.1):
+    """
+    emb: [Batch, Dim]
+    pos_emb: [Batch, Dim]
+    neg_embs: [Batch, K, Dim]
+    """
+    # (B, D) * (B, D) -> sum(dim=1) -> (B)
+    cos_pos = (emb * pos_emb).sum(dim=1)
+    d_pos = 1.0 - cos_pos  # [Batch]
+
+    # emb.unsqueeze(1): [Batch, 1, Dim]
+    # (B, 1, D) * (B, K, D) -> sum(dim=2) -> (B, K)
+    cos_neg = (emb.unsqueeze(1) * neg_embs).sum(dim=2)
+    d_neg = 1.0 - cos_neg  # [Batch, K]
+
+    # d_pos.unsqueeze(1) được broadcast để so sánh với từng giá trị trong d_neg
+    loss = torch.clamp(d_pos.unsqueeze(1) - d_neg + margin, min=0.0)
+
+    return loss.mean()
