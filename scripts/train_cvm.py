@@ -183,6 +183,8 @@ def main(cfg):
             dynamic_ncols=True
         )
 
+        lambda_t = cfg['anchor_lambda'] * max(0.0, 1.0 - t / cfg['num_tasks'])
+
         # Training loop per epoch
         for epoch in range(cfg['epochs_per_task']):
             model.train()
@@ -224,7 +226,7 @@ def main(cfg):
                     old_anchor_mat = anchors_tensor[old_inds].to(device)
                     Ld = semantic_distance_loss(emb, emb_prev, old_anchor_mat)
 
-                loss = Lm + cfg['beta'] * Ld + cfg['anchor_lambda'] * L_anchor
+                loss = Lm + cfg['beta'] * Ld + lambda_t * L_anchor
 
                 # replay mixing: sample buffer and compute loss on replay items and mix
                 if len(buffer) > 0 and cfg['replay_batch'] > 0:
@@ -250,9 +252,8 @@ def main(cfg):
 
                         Lm_buf = triplet_loss_seen_negs(emb_buf, pos_buf, buf_labels, anchors_tensor, seen_inds,
                                                         margin=cfg['margin'])
-                        L_anchor_buf = anchor_attraction_loss(emb_buf, pos_buf)
                         # no Ld for replay for simplicity, or could compute with prev_model
-                        loss = loss + cfg['replay_lambda'] * (Lm_buf + + cfg['anchor_lambda'] * L_anchor_buf)
+                        loss = loss + cfg['replay_lambda'] * Lm_buf
 
                 optimizer.zero_grad()
                 loss.backward()
