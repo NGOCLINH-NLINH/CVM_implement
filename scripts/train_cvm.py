@@ -187,7 +187,7 @@ def main(cfg):
         for epoch in range(cfg['epochs_per_task']):
             model.train()
 
-            K = 5  # number of negatives
+            K = 9  # number of negatives
             for images, labels in train_loader:
                 images_cuda = images.to(device)
                 labels_cuda = labels.to(device)  # global labels 0..99
