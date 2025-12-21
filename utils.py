@@ -109,6 +109,35 @@ def make_cifar100_tasks(num_tasks, batch_size, augment=True):
     return tasks, classes
 
 
+def triplet_loss_all_negs(emb, pos_emb, labels, anchors_tensor, margin=0.1):
+    """
+    emb: [Batch, Dim]
+    pos_emb: [Batch, Dim]
+    labels: [Batch]
+    anchors_tensor: [Total_Classes, Dim]
+    """
+    # Distance to positive emb: d = 1 - dot_product
+    cos_pos = (emb * pos_emb).sum(dim=1)
+    d_pos = 1.0 - cos_pos  # [Batch]
+
+    # Distance to all anchors: [Batch, Total_Classes]
+    cos_all = emb @ anchors_tensor.t()
+    d_all = 1.0 - cos_all  # [Batch, Total_Classes]
+
+    # mask[i, j] = True nếu lớp j là nhãn đúng của ảnh i
+    batch_size = emb.size(0)
+    num_classes = anchors_tensor.size(0)
+    mask = torch.arange(num_classes, device=emb.device).expand(batch_size, num_classes) == labels.unsqueeze(1)
+
+    # Triplet Loss matrix: max(0, d_pos - d_neg + margin)
+    # d_pos.unsqueeze(1) có kích thước [Batch, 1], sẽ được broadcast với d_all [Batch, Total_Classes]
+    loss_mat = torch.clamp(d_pos.unsqueeze(1) - d_all + margin, min=0.0)
+
+    loss_mat[mask] = 0.0
+
+    return loss_mat.sum() / (batch_size * (num_classes - 1))
+
+
 def set_seed(seed=1234):
     random.seed(seed)
     np.random.seed(seed)

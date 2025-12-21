@@ -11,7 +11,8 @@ import torchvision.datasets as datasets
 from torch.utils.data import DataLoader, Subset
 import numpy as np
 from models.resnet_cvm import ResNetCVM
-from utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, set_seed
+from utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, \
+    set_seed, triplet_loss_all_negs
 from sklearn.linear_model import LogisticRegression
 from tqdm import tqdm
 import random
@@ -197,20 +198,7 @@ def main(cfg):
                 # positive anchors per sample
                 pos = anchors_tensor[labels_cuda].to(device)
 
-                # negative: sample random label within current task but != label
-                neg_idx = []
-                for lbl in labels.numpy():
-                    choices = cur_inds.copy()
-                    if lbl in choices:
-                        choices.remove(lbl)
-                    if len(choices) == 0:
-                        neg_idx.append(lbl)
-                    else:
-                        neg_idx.append(random.choice(choices))
-                neg_idx = torch.tensor(neg_idx, dtype=torch.long, device=device)
-                neg = anchors_tensor[neg_idx]
-
-                Lm = triplet_loss_emb(emb, pos, neg, margin=cfg['margin'])
+                Lm = triplet_loss_all_negs(emb, pos, labels_cuda, anchors_tensor, margin=cfg['margin'])
 
                 # compute Ld if prev_model exists and old anchors exist
                 if prev_model is None or len(old_inds) == 0:
@@ -231,14 +219,8 @@ def main(cfg):
                         buf_labels = buf_labels.to(device)
                         emb_buf = model(buf_imgs)
                         pos_buf = anchors_tensor[buf_labels].to(device)
-                        # choose negatives from all seen classes for buffer items
-                        neg_idx_buf = []
-                        for lbl in buf_labels.cpu().numpy():
-                            possible_negs = [i for i in range(anchors_tensor.shape[0]) if i != lbl]
-                            neg_idx_buf.append(random.choice(possible_negs))
-                        neg_idx_buf = torch.tensor(neg_idx_buf, device=device)
-                        neg_buf = anchors_tensor[neg_idx_buf].to(device)
-                        Lm_buf = triplet_loss_emb(emb_buf, pos_buf, neg_buf, margin=cfg['margin'])
+
+                        Lm_buf = triplet_loss_all_negs(emb_buf, pos_buf, buf_labels, anchors_tensor, margin=cfg['margin'])
                         # no Ld for replay for simplicity, or could compute with prev_model
                         loss = loss + cfg['replay_lambda'] * Lm_buf
 
