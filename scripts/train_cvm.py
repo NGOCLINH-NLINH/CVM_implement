@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader, Subset
 import numpy as np
 from models.resnet_cvm import ResNetCVM
 from utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, \
-    set_seed, triplet_loss_k_negs, triplet_loss_seen_negs
+    set_seed, triplet_loss_k_negs, triplet_loss_seen_negs, anchor_attraction_loss
 from sklearn.linear_model import LogisticRegression
 from tqdm import tqdm
 import random
@@ -213,6 +213,8 @@ def main(cfg):
 
                 Lm = triplet_loss_k_negs(emb, pos, neg_k_tensor, margin=cfg['margin'])
 
+                L_anchor = anchor_attraction_loss(emb, pos)
+
                 # compute Ld if prev_model exists and old anchors exist
                 if prev_model is None or len(old_inds) == 0:
                     Ld = torch.tensor(0.0, device=device)
@@ -222,7 +224,7 @@ def main(cfg):
                     old_anchor_mat = anchors_tensor[old_inds].to(device)
                     Ld = semantic_distance_loss(emb, emb_prev, old_anchor_mat)
 
-                loss = Lm + cfg['beta'] * Ld
+                loss = Lm + cfg['beta'] * Ld + cfg['anchor_lambda'] * L_anchor
 
                 # replay mixing: sample buffer and compute loss on replay items and mix
                 if len(buffer) > 0 and cfg['replay_batch'] > 0:
@@ -248,8 +250,9 @@ def main(cfg):
 
                         Lm_buf = triplet_loss_seen_negs(emb_buf, pos_buf, buf_labels, anchors_tensor, seen_inds,
                                                         margin=cfg['margin'])
+                        L_anchor_buf = anchor_attraction_loss(emb_buf, pos_buf)
                         # no Ld for replay for simplicity, or could compute with prev_model
-                        loss = loss + cfg['replay_lambda'] * Lm_buf
+                        loss = loss + cfg['replay_lambda'] * (Lm_buf + + cfg['anchor_lambda'] * L_anchor_buf)
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -261,10 +264,10 @@ def main(cfg):
 
                 pbar.update(1)
                 pbar.set_postfix({
-                    "epoch": epoch,
-                    "loss": f"{loss.item():.4f}",
-                    "Lm": f"{Lm.item():.4f}",
-                    "Ld": f"{Ld.item():.4f}"
+                    "e": epoch,
+                    "a": f"{L_anchor.item():.3f}",
+                    "m": f"{Lm.item():.3f}",
+                    "d": f"{Ld.item():.3f}"
                 })
 
             scheduler.step()
@@ -350,6 +353,7 @@ if __name__ == "__main__":
     cfg['weight_decay'] = float(cfg['weight_decay'])
     cfg['margin'] = float(cfg['margin'])
     cfg['beta'] = float(cfg['beta'])
+    cfg['anchor_lambda'] = float(cfg['anchor_lambda'])
 
     cfg['batch_size'] = int(cfg['batch_size'])
     cfg['epochs_per_task'] = int(cfg['epochs_per_task'])

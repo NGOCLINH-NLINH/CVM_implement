@@ -162,3 +162,12 @@ def triplet_loss_seen_negs(emb, pos_emb, labels, anchors_tensor, seen_indices, m
         return torch.tensor(0.0, device=device, requires_grad=True)
 
     return loss_mat.sum() / (emb.size(0) * num_negs)
+
+
+def anchor_attraction_loss(emb, pos_emb):
+    """
+    emb: [B, D]      normalized
+    pos_emb: [B, D]  normalized anchor of ground-truth class
+    """
+    # 1 - cosine similarity
+    return (1.0 - (emb * pos_emb).sum(dim=1)).mean()
