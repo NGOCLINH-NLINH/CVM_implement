@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader, Subset
 import numpy as np
 from models.resnet_cvm import ResNetCVM
 from utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, \
-    set_seed, triplet_loss_all_negs
+    set_seed, triplet_loss_seen_negs
 from sklearn.linear_model import LogisticRegression
 from tqdm import tqdm
 import random
@@ -198,7 +198,7 @@ def main(cfg):
                 # positive anchors per sample
                 pos = anchors_tensor[labels_cuda].to(device)
 
-                Lm = triplet_loss_all_negs(emb, pos, labels_cuda, anchors_tensor, margin=cfg['margin'])
+                Lm = triplet_loss_seen_negs(emb, pos, labels_cuda, anchors_tensor, seen_inds, margin=cfg['margin'])
 
                 # compute Ld if prev_model exists and old anchors exist
                 if prev_model is None or len(old_inds) == 0:
@@ -220,7 +220,7 @@ def main(cfg):
                         emb_buf = model(buf_imgs)
                         pos_buf = anchors_tensor[buf_labels].to(device)
 
-                        Lm_buf = triplet_loss_all_negs(emb_buf, pos_buf, buf_labels, anchors_tensor, margin=cfg['margin'])
+                        Lm_buf = triplet_loss_seen_negs(emb_buf, pos_buf, buf_labels, anchors_tensor, seen_inds, margin=cfg['margin'])
                         # no Ld for replay for simplicity, or could compute with prev_model
                         loss = loss + cfg['replay_lambda'] * Lm_buf
 

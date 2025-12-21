@@ -109,33 +109,34 @@ def make_cifar100_tasks(num_tasks, batch_size, augment=True):
     return tasks, classes
 
 
-def triplet_loss_all_negs(emb, pos_emb, labels, anchors_tensor, margin=0.1):
+def triplet_loss_seen_negs(emb, pos_emb, labels, anchors_tensor, seen_indices, margin=0.1):
     """
-    emb: [Batch, Dim]
-    pos_emb: [Batch, Dim]
-    labels: [Batch]
-    anchors_tensor: [Total_Classes, Dim]
+    Chỉ tính Triplet Loss dựa trên các lớp đã học (seen_indices).
     """
-    # Distance to positive emb: d = 1 - dot_product
+    device = emb.device
+    anchors_seen = anchors_tensor[seen_indices].to(device)  # [Num_Seen, Dim]
+
+    # Distance to positive
     cos_pos = (emb * pos_emb).sum(dim=1)
     d_pos = 1.0 - cos_pos  # [Batch]
 
-    # Distance to all anchors: [Batch, Total_Classes]
-    cos_all = emb @ anchors_tensor.t()
-    d_all = 1.0 - cos_all  # [Batch, Total_Classes]
+    # [Batch, Dim] @ [Dim, Num_Seen] -> [Batch, Num_Seen]
+    cos_seen = emb @ anchors_seen.t()
+    d_seen = 1.0 - cos_seen
 
-    # mask[i, j] = True nếu lớp j là nhãn đúng của ảnh i
-    batch_size = emb.size(0)
-    num_classes = anchors_tensor.size(0)
-    mask = torch.arange(num_classes, device=emb.device).expand(batch_size, num_classes) == labels.unsqueeze(1)
+    seen_indices_tensor = torch.tensor(seen_indices, device=device).unsqueeze(0)  # [1, Num_Seen]
+    mask = (seen_indices_tensor == labels.unsqueeze(1))  # [Batch, Num_Seen]
 
-    # Triplet Loss matrix: max(0, d_pos - d_neg + margin)
-    # d_pos.unsqueeze(1) có kích thước [Batch, 1], sẽ được broadcast với d_all [Batch, Total_Classes]
-    loss_mat = torch.clamp(d_pos.unsqueeze(1) - d_all + margin, min=0.0)
+    # Loss matrix: max(0, d_pos - d_neg + margin)
+    loss_mat = torch.clamp(d_pos.unsqueeze(1) - d_seen + margin, min=0.0)
 
     loss_mat[mask] = 0.0
 
-    return loss_mat.sum() / (batch_size * (num_classes - 1))
+    num_negs = anchors_seen.size(0) - 1
+    if num_negs <= 0:
+        return torch.tensor(0.0, device=device, requires_grad=True)
+
+    return loss_mat.sum() / (emb.size(0) * num_negs)
 
 
 def set_seed(seed=1234):
