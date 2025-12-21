@@ -183,6 +183,10 @@ def main(cfg):
             dynamic_ncols=True
         )
 
+        old_anchor_mat = None
+        if prev_model is not None and len(old_inds) > 0:
+            old_anchor_mat = anchors_tensor[old_inds].to(device)
+
         # Training loop per epoch
         for epoch in range(cfg['epochs_per_task']):
             model.train()
@@ -214,12 +218,11 @@ def main(cfg):
                 Lm = triplet_loss_k_negs(emb, pos, neg_k_tensor, margin=cfg['margin'])
 
                 # compute Ld if prev_model exists and old anchors exist
-                if prev_model is None or len(old_inds) == 0:
+                if prev_model is None or old_anchor_mat is None:
                     Ld = torch.tensor(0.0, device=device)
                 else:
                     with torch.no_grad():
                         emb_prev = prev_model(images_cuda)
-                    old_anchor_mat = anchors_tensor[old_inds].to(device)
                     Ld = semantic_distance_loss(emb, emb_prev, old_anchor_mat)
 
                 loss = Lm + cfg['beta'] * Ld
@@ -246,8 +249,13 @@ def main(cfg):
                         neg_buf_k_tensor = anchors_tensor[neg_idx_buf]
 
                         Lm_buf = triplet_loss_k_negs(emb_buf, pos_buf, neg_buf_k_tensor, margin=cfg['margin'])
-                        # no Ld for replay for simplicity, or could compute with prev_model
-                        loss = loss + cfg['replay_lambda'] * Lm_buf
+
+                        Ld_buf = torch.tensor(0.0, device=device)
+                        if prev_model is not None and old_anchor_mat is not None:
+                            with torch.no_grad():
+                                emb_prev_buf = prev_model(buf_imgs)
+                            Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
+                        loss = loss + cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf)
 
                 optimizer.zero_grad()
                 loss.backward()
