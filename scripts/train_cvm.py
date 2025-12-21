@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader, Subset
 import numpy as np
 from models.resnet_cvm import ResNetCVM
 from utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, \
-    set_seed, triplet_loss_k_negs
+    set_seed, triplet_loss_k_negs, triplet_loss_seen_negs
 from sklearn.linear_model import LogisticRegression
 from tqdm import tqdm
 import random
@@ -233,19 +233,21 @@ def main(cfg):
                         emb_buf = model(buf_imgs)
                         pos_buf = anchors_tensor[buf_labels].to(device)
                         # choose negatives from all seen classes for buffer items
-                        neg_idx_buf_list = []
-                        for lbl in buf_labels.cpu().numpy():
-                            choices = [i for i in seen_inds if i != lbl]
-                            if len(choices) >= K:
-                                negs = random.sample(choices, k=K)
-                            else:
-                                negs = random.choices(choices, k=K)
-                            neg_idx_buf_list.append(negs)
+                        # neg_idx_buf_list = []
+                        # for lbl in buf_labels.cpu().numpy():
+                        #     choices = [i for i in seen_inds if i != lbl]
+                        #     if len(choices) >= K:
+                        #         negs = random.sample(choices, k=K)
+                        #     else:
+                        #         negs = random.choices(choices, k=K)
+                        #     neg_idx_buf_list.append(negs)
+                        #
+                        # neg_idx_buf = torch.tensor(neg_idx_buf_list, dtype=torch.long, device=device)
+                        # neg_buf_k_tensor = anchors_tensor[neg_idx_buf]
+                        # Lm_buf = triplet_loss_k_negs(emb_buf, pos_buf, neg_buf_k_tensor, margin=cfg['margin'])
 
-                        neg_idx_buf = torch.tensor(neg_idx_buf_list, dtype=torch.long, device=device)
-                        neg_buf_k_tensor = anchors_tensor[neg_idx_buf]
-
-                        Lm_buf = triplet_loss_k_negs(emb_buf, pos_buf, neg_buf_k_tensor, margin=cfg['margin'])
+                        Lm_buf = triplet_loss_seen_negs(emb_buf, pos_buf, buf_labels, anchors_tensor, seen_inds,
+                                                        margin=cfg['margin'])
                         # no Ld for replay for simplicity, or could compute with prev_model
                         loss = loss + cfg['replay_lambda'] * Lm_buf
 

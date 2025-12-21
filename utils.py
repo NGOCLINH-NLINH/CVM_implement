@@ -132,3 +132,33 @@ def triplet_loss_k_negs(emb, pos_emb, neg_embs, margin=0.1):
     loss = torch.clamp(d_pos.unsqueeze(1) - d_neg + margin, min=0.0)
 
     return loss.mean()
+
+
+def triplet_loss_seen_negs(emb, pos_emb, labels, anchors_tensor, seen_indices, margin=0.1):
+    """
+    Chỉ tính Triplet Loss dựa trên các lớp đã học (seen_indices).
+    """
+    device = emb.device
+    anchors_seen = anchors_tensor[seen_indices].to(device)  # [Num_Seen, Dim]
+
+    # Distance to positive
+    cos_pos = (emb * pos_emb).sum(dim=1)
+    d_pos = 1.0 - cos_pos  # [Batch]
+
+    # [Batch, Dim] @ [Dim, Num_Seen] -> [Batch, Num_Seen]
+    cos_seen = emb @ anchors_seen.t()
+    d_seen = 1.0 - cos_seen
+
+    seen_indices_tensor = torch.tensor(seen_indices, device=device).unsqueeze(0)  # [1, Num_Seen]
+    mask = (seen_indices_tensor == labels.unsqueeze(1))  # [Batch, Num_Seen]
+
+    # Loss matrix: max(0, d_pos - d_neg + margin)
+    loss_mat = torch.clamp(d_pos.unsqueeze(1) - d_seen + margin, min=0.0)
+
+    loss_mat[mask] = 0.0
+
+    num_negs = anchors_seen.size(0) - 1
+    if num_negs <= 0:
+        return torch.tensor(0.0, device=device, requires_grad=True)
+
+    return loss_mat.sum() / (emb.size(0) * num_negs)
