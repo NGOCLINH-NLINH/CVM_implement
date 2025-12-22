@@ -6,7 +6,7 @@ lr: 0.01
 momentum: 0.9
 weight_decay: 5e-4
 margin: 0.1
-beta: 7
+beta: 5
 memory_size: 2000
 replay_batch: 32
 replay_lambda: 1
@@ -16,4 +16,3 @@ anchors_path: anchors/cifar100_anchors.pkl
 checkpoints_dir: checkpoints
 pretrained_backbone: True
 milestones: [50, 75]
-anchor_lambda: 0.02

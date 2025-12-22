@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader, Subset
 import numpy as np
 from models.resnet_cvm import ResNetCVM
 from utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, \
-    set_seed, triplet_loss_k_negs, triplet_loss_seen_negs, anchor_attraction_loss
+    set_seed, triplet_loss_k_negs, triplet_loss_seen_negs, adaptive_margin_triplet_loss_k_negs
 from sklearn.linear_model import LogisticRegression
 from tqdm import tqdm
 import random
@@ -183,8 +183,6 @@ def main(cfg):
             dynamic_ncols=True
         )
 
-        lambda_t = cfg['anchor_lambda'] * max(0.0, 1.0 - t / cfg['num_tasks'])
-
         # Training loop per epoch
         for epoch in range(cfg['epochs_per_task']):
             model.train()
@@ -213,9 +211,13 @@ def main(cfg):
                 neg_idx = torch.tensor(neg_idx_list, dtype=torch.long, device=device)
                 neg_k_tensor = anchors_tensor[neg_idx]
 
-                Lm = triplet_loss_k_negs(emb, pos, neg_k_tensor, margin=cfg['margin'])
-
-                L_anchor = anchor_attraction_loss(emb, pos)
+                # Lm = triplet_loss_k_negs(emb, pos, neg_k_tensor, margin=cfg['margin'])
+                Lm = adaptive_margin_triplet_loss_k_negs(
+                    emb,
+                    pos,
+                    neg_k_tensor,
+                    base_margin=cfg['margin']
+                )
 
                 # compute Ld if prev_model exists and old anchors exist
                 if prev_model is None or len(old_inds) == 0:
@@ -226,7 +228,7 @@ def main(cfg):
                     old_anchor_mat = anchors_tensor[old_inds].to(device)
                     Ld = semantic_distance_loss(emb, emb_prev, old_anchor_mat)
 
-                loss = Lm + cfg['beta'] * Ld + lambda_t * L_anchor
+                loss = Lm + cfg['beta'] * Ld
 
                 # replay mixing: sample buffer and compute loss on replay items and mix
                 if len(buffer) > 0 and cfg['replay_batch'] > 0:
@@ -266,7 +268,6 @@ def main(cfg):
                 pbar.update(1)
                 pbar.set_postfix({
                     "e": epoch,
-                    "a": f"{L_anchor.item():.3f}",
                     "m": f"{Lm.item():.3f}",
                     "d": f"{Ld.item():.3f}"
                 })
@@ -354,7 +355,6 @@ if __name__ == "__main__":
     cfg['weight_decay'] = float(cfg['weight_decay'])
     cfg['margin'] = float(cfg['margin'])
     cfg['beta'] = float(cfg['beta'])
-    cfg['anchor_lambda'] = float(cfg['anchor_lambda'])
 
     cfg['batch_size'] = int(cfg['batch_size'])
     cfg['epochs_per_task'] = int(cfg['epochs_per_task'])
