@@ -223,7 +223,7 @@ def main(cfg):
                     emb,
                     labels_cuda,
                     anchors_tensor,
-                    cur_inds,  # seen_inds
+                    seen_inds,
                     delta=cfg['spread_delta']
                 )
 

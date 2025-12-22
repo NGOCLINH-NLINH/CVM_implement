@@ -17,4 +17,4 @@ checkpoints_dir: checkpoints
 pretrained_backbone: True
 milestones: [50, 75]
 spread_lambda: 0.03
-spread_delta: 0.3
+spread_delta: 0.5
