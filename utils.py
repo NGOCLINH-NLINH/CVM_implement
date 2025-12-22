@@ -200,3 +200,49 @@ def adaptive_margin_triplet_loss_k_negs(
         return loss.sum()
     else:
         return loss
+
+
+def adaptive_margin_triplet_loss_seen_negs(
+    emb,               # [B, D] image embeddings (L2-normalized)
+    pos_emb,           # [B, D] positive anchors (L2-normalized)
+    labels,            # [B] global labels
+    anchors_tensor,    # [C, D] all anchors (L2-normalized)
+    seen_indices,      # list[int] seen class indices
+    base_margin=0.1
+):
+    """
+    Adaptive-margin Triplet Loss using all seen anchors as negatives.
+
+    Margin adapts based on anchor-anchor similarity:
+        m_ij = base_margin * (1 - cos(a_pos, a_neg))
+
+    Suitable for anchor-based continual learning.
+    """
+
+    device = emb.device
+
+    if len(seen_indices) <= 1:
+        return torch.tensor(0.0, device=device, requires_grad=True)
+
+    anchors_seen = anchors_tensor[seen_indices].to(device)  # [Ns, D]
+
+    cos_pos = (emb * pos_emb).sum(dim=1, keepdim=True)   # [B, 1]
+    d_pos = 1.0 - cos_pos                                # [B, 1]
+
+    cos_seen = emb @ anchors_seen.t()                    # [B, Ns]
+    d_seen = 1.0 - cos_seen                              # [B, Ns]
+
+    anchor_sim = pos_emb @ anchors_seen.t()              # [B, Ns]
+    adaptive_margin = base_margin * (1.0 - anchor_sim).clamp(min=0.0)
+
+    seen_idx_tensor = torch.tensor(seen_indices, device=device).unsqueeze(0)  # [1, Ns]
+    pos_mask = (seen_idx_tensor == labels.unsqueeze(1))                        # [B, Ns]
+
+    loss_mat = torch.clamp(d_pos - d_seen + adaptive_margin, min=0.0)
+    loss_mat[pos_mask] = 0.0
+
+    num_negs = anchors_seen.size(0) - 1
+    if num_negs <= 0:
+        return torch.tensor(0.0, device=device, requires_grad=True)
+
+    return loss_mat.sum() / (emb.size(0) * num_negs)
