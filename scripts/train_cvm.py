@@ -246,7 +246,7 @@ def main(cfg):
                             buf_labels,
                             anchors_tensor,
                             seen_inds,
-                            base_margin=0.5*cfg['margin']
+                            base_margin=cfg['margin']
                         )
                         # no Ld for replay for simplicity, or could compute with prev_model
                         loss = loss + cfg['replay_lambda'] * Lm_buf
