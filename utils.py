@@ -171,3 +171,44 @@ def anchor_attraction_loss(emb, pos_emb):
     """
     # 1 - cosine similarity
     return (1.0 - (emb * pos_emb).sum(dim=1)).mean()
+
+
+def image_side_prototype_spread_loss(
+    emb,
+    labels,
+    anchors_tensor,
+    seen_indices,
+    delta=0.3
+):
+    """
+    Image-side Prototype Spread Regularization
+
+    emb:            [B, D] normalized image embeddings
+    labels:         [B] ground-truth global labels
+    anchors_tensor: [C, D] normalized anchors (all classes)
+    seen_indices:   list[int] seen class indices
+    delta:          cosine similarity threshold
+    """
+    device = emb.device
+
+    if len(seen_indices) <= 1:
+        return torch.tensor(0.0, device=device)
+
+    anchors_seen = anchors_tensor[seen_indices].to(device)  # [Ns, D]
+
+    # cosine similarity: [B, Ns]
+    cos_sim = emb @ anchors_seen.t()
+
+    # build mask to remove positive anchor
+    seen_idx_tensor = torch.tensor(seen_indices, device=device).unsqueeze(0)  # [1, Ns]
+    pos_mask = (seen_idx_tensor == labels.unsqueeze(1))  # [B, Ns]
+
+    # only penalize negatives
+    neg_cos = cos_sim.masked_fill(pos_mask, -1.0)
+
+    # hinge: max(0, cos - delta)
+    loss_mat = torch.clamp(neg_cos - delta, min=0.0)
+
+    # normalize by number of negatives
+    num_negs = anchors_seen.size(0) - 1
+    return loss_mat.sum() / (emb.size(0) * num_negs)
