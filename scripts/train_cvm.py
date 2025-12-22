@@ -11,7 +11,8 @@ from torch.utils.data import DataLoader, Subset
 import numpy as np
 from models.resnet_cvm import ResNetCVM
 from utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, \
-    set_seed, triplet_loss_k_negs, triplet_loss_seen_negs, anchor_attraction_loss, image_side_prototype_spread_loss
+    set_seed, triplet_loss_k_negs, triplet_loss_seen_negs, anchor_attraction_loss, image_side_prototype_spread_loss, \
+    adaptive_margin_triplet_loss_k_negs
 from sklearn.linear_model import LogisticRegression
 from tqdm import tqdm
 import random
@@ -183,8 +184,6 @@ def main(cfg):
             dynamic_ncols=True
         )
 
-        # lambda_t = cfg['anchor_lambda'] * max(0.0, 1.0 - t / cfg['num_tasks'])
-
         # Training loop per epoch
         for epoch in range(cfg['epochs_per_task']):
             model.train()
@@ -213,9 +212,13 @@ def main(cfg):
                 neg_idx = torch.tensor(neg_idx_list, dtype=torch.long, device=device)
                 neg_k_tensor = anchors_tensor[neg_idx]
 
-                Lm = triplet_loss_k_negs(emb, pos, neg_k_tensor, margin=cfg['margin'])
+                Lm = adaptive_margin_triplet_loss_k_negs(
+                    emb,
+                    pos,
+                    neg_k_tensor,
+                    base_margin=cfg['margin']
+                )
 
-                # L_anchor = anchor_attraction_loss(emb, pos)
                 L_spread = image_side_prototype_spread_loss(
                     emb,
                     labels_cuda,
@@ -243,19 +246,6 @@ def main(cfg):
                         buf_labels = buf_labels.to(device)
                         emb_buf = model(buf_imgs)
                         pos_buf = anchors_tensor[buf_labels].to(device)
-                        # choose negatives from all seen classes for buffer items
-                        # neg_idx_buf_list = []
-                        # for lbl in buf_labels.cpu().numpy():
-                        #     choices = [i for i in seen_inds if i != lbl]
-                        #     if len(choices) >= K:
-                        #         negs = random.sample(choices, k=K)
-                        #     else:
-                        #         negs = random.choices(choices, k=K)
-                        #     neg_idx_buf_list.append(negs)
-                        #
-                        # neg_idx_buf = torch.tensor(neg_idx_buf_list, dtype=torch.long, device=device)
-                        # neg_buf_k_tensor = anchors_tensor[neg_idx_buf]
-                        # Lm_buf = triplet_loss_k_negs(emb_buf, pos_buf, neg_buf_k_tensor, margin=cfg['margin'])
 
                         Lm_buf = triplet_loss_seen_negs(emb_buf, pos_buf, buf_labels, anchors_tensor, seen_inds,
                                                         margin=cfg['margin'])
@@ -361,7 +351,6 @@ if __name__ == "__main__":
     cfg['weight_decay'] = float(cfg['weight_decay'])
     cfg['margin'] = float(cfg['margin'])
     cfg['beta'] = float(cfg['beta'])
-    # cfg['anchor_lambda'] = float(cfg['anchor_lambda'])
 
     cfg['batch_size'] = int(cfg['batch_size'])
     cfg['epochs_per_task'] = int(cfg['epochs_per_task'])

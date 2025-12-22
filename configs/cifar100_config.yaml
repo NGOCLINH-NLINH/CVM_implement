@@ -16,6 +16,5 @@ anchors_path: anchors/cifar100_anchors.pkl
 checkpoints_dir: checkpoints
 pretrained_backbone: True
 milestones: [50, 75]
-#anchor_lambda: 0.02
 spread_lambda: 0.03
 spread_delta: 0.3

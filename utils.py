@@ -212,3 +212,41 @@ def image_side_prototype_spread_loss(
     # normalize by number of negatives
     num_negs = anchors_seen.size(0) - 1
     return loss_mat.sum() / (emb.size(0) * num_negs)
+
+
+def adaptive_margin_triplet_loss_k_negs(
+    emb,              # [B, D] image embeddings (L2-normalized)
+    pos,              # [B, D] positive anchors (L2-normalized)
+    neg_k,            # [B, K, D] negative anchors (L2-normalized)
+    base_margin=0.1,
+    reduction="mean"
+):
+    """
+    Adaptive-margin triplet loss with K negatives per sample.
+
+    Margin is scaled by anchor-anchor similarity:
+        m_ij = base_margin * (1 - cos(a_pos, a_neg_j))
+
+    Returns:
+        scalar loss
+    """
+
+    # cosine similarities
+    sim_pos = (emb * pos).sum(dim=1, keepdim=True)      # [B, 1]
+    sim_neg = (emb.unsqueeze(1) * neg_k).sum(dim=2)     # [B, K]
+
+    # anchor-anchor similarity
+    anchor_sim = (pos.unsqueeze(1) * neg_k).sum(dim=2)  # [B, K]
+
+    # adaptive margin
+    adaptive_margin = base_margin * (1.0 - anchor_sim).clamp(min=0.0)
+
+    # triplet hinge
+    loss = F.relu(sim_neg - sim_pos + adaptive_margin)  # [B, K]
+
+    if reduction == "mean":
+        return loss.mean()
+    elif reduction == "sum":
+        return loss.sum()
+    else:
+        return loss
