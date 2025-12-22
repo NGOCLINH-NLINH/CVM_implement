@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader, Subset
 import numpy as np
 from models.resnet_cvm import ResNetCVM
 from utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, \
-    set_seed, triplet_loss_k_negs, triplet_loss_seen_negs, anchor_attraction_loss, image_side_prototype_spread_loss
+    set_seed, triplet_loss_k_negs, triplet_loss_seen_negs, image_side_prototype_spread_loss
 from sklearn.linear_model import LogisticRegression
 from tqdm import tqdm
 import random
@@ -165,12 +165,15 @@ def main(cfg):
     seen_inds = []
     task_accs = []
     eval_history = []  # list of per-task arrays for forgetting calculation
+    class_task_map = {}
 
     for t, (train_loader, test_loader, class_inds) in enumerate(tasks):
         print(f"\n=== Training Task {t} with classes {class_inds} ===")
         cur_inds = class_inds
         old_inds = [i for i in seen_inds]
         seen_inds += cur_inds
+        for c in cur_inds:
+            class_task_map[c] = t
 
         optimizer = optim.SGD(model.parameters(), lr=cfg['lr'], momentum=cfg['momentum'],
                               weight_decay=cfg['weight_decay'])
@@ -182,8 +185,6 @@ def main(cfg):
             desc=f"Task {t}",
             dynamic_ncols=True
         )
-
-        # lambda_t = cfg['anchor_lambda'] * max(0.0, 1.0 - t / cfg['num_tasks'])
 
         # Training loop per epoch
         for epoch in range(cfg['epochs_per_task']):
@@ -215,7 +216,6 @@ def main(cfg):
 
                 Lm = triplet_loss_k_negs(emb, pos, neg_k_tensor, margin=cfg['margin'])
 
-                # L_anchor = anchor_attraction_loss(emb, pos)
                 L_spread = image_side_prototype_spread_loss(
                     emb,
                     labels_cuda,
@@ -237,30 +237,40 @@ def main(cfg):
 
                 # replay mixing: sample buffer and compute loss on replay items and mix
                 if len(buffer) > 0 and cfg['replay_batch'] > 0:
-                    buf_imgs, buf_labels = buffer.sample(cfg['replay_batch'])
+                    buf_imgs, buf_labels, buf_task_ids = buffer.sample(cfg['replay_batch'])
                     if buf_imgs is not None:
                         buf_imgs = buf_imgs.to(device)
                         buf_labels = buf_labels.to(device)
                         emb_buf = model(buf_imgs)
                         pos_buf = anchors_tensor[buf_labels].to(device)
-                        # choose negatives from all seen classes for buffer items
-                        # neg_idx_buf_list = []
-                        # for lbl in buf_labels.cpu().numpy():
-                        #     choices = [i for i in seen_inds if i != lbl]
-                        #     if len(choices) >= K:
-                        #         negs = random.sample(choices, k=K)
-                        #     else:
-                        #         negs = random.choices(choices, k=K)
-                        #     neg_idx_buf_list.append(negs)
-                        #
-                        # neg_idx_buf = torch.tensor(neg_idx_buf_list, dtype=torch.long, device=device)
-                        # neg_buf_k_tensor = anchors_tensor[neg_idx_buf]
-                        # Lm_buf = triplet_loss_k_negs(emb_buf, pos_buf, neg_buf_k_tensor, margin=cfg['margin'])
 
                         Lm_buf = triplet_loss_seen_negs(emb_buf, pos_buf, buf_labels, anchors_tensor, seen_inds,
                                                         margin=cfg['margin'])
+
+                        L_spread_buf = torch.tensor(0.0, device=device)
+                        cnt = 0
+                        for ti in torch.unique(buf_task_ids):
+                            mask = (buf_task_ids == ti)
+                            future_anchors = [
+                                c for c in seen_inds
+                                if class_task_map[c] > ti
+                            ]
+                            if len(future_anchors) == 0:
+                                continue
+                            L_spread_buf += image_side_prototype_spread_loss(
+                                emb_buf[mask],
+                                buf_labels[mask],
+                                anchors_tensor,
+                                future_anchors,
+                                delta=cfg['spread_delta']
+                            )
+                            cnt += 1
+
+                        if cnt > 0:
+                            L_spread_buf /= cnt
+
                         # no Ld for replay for simplicity, or could compute with prev_model
-                        loss = loss + cfg['replay_lambda'] * Lm_buf
+                        loss = loss + cfg['replay_lambda'] * (Lm_buf + cfg['spread_lambda'] * L_spread_buf)
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -268,7 +278,7 @@ def main(cfg):
                 optimizer.step()
 
                 # add to buffer
-                buffer.add_batch(images, labels)
+                buffer.add_batch(images, labels, task_id=t)
 
                 pbar.update(1)
                 pbar.set_postfix({
@@ -361,7 +371,6 @@ if __name__ == "__main__":
     cfg['weight_decay'] = float(cfg['weight_decay'])
     cfg['margin'] = float(cfg['margin'])
     cfg['beta'] = float(cfg['beta'])
-    # cfg['anchor_lambda'] = float(cfg['anchor_lambda'])
 
     cfg['batch_size'] = int(cfg['batch_size'])
     cfg['epochs_per_task'] = int(cfg['epochs_per_task'])

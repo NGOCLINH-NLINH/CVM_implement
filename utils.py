@@ -28,11 +28,11 @@ class ReservoirBuffer:
         random.seed(seed)
         np.random.seed(seed)
 
-    def add_batch(self, images, labels):
+    def add_batch(self, images, labels, task_id):
         images = images.detach().cpu()
         labels = labels.detach().cpu()
         for i in range(images.shape[0]):
-            item = (images[i].clone(), int(labels[i].item()))
+            item = (images[i].clone(), int(labels[i].item()), int(task_id))
             self.n_seen += 1
             if len(self.buffer) < self.capacity:
                 self.buffer.append(item)
@@ -47,7 +47,8 @@ class ReservoirBuffer:
         batch = random.sample(self.buffer, k=min(batch_size, len(self.buffer)))
         imgs = torch.stack([b[0] for b in batch])
         labels = torch.tensor([b[1] for b in batch], dtype=torch.long)
-        return imgs, labels
+        task_ids = torch.tensor([b[2] for b in batch], dtype=torch.long)
+        return imgs, labels, task_ids
 
     def __len__(self):
         return len(self.buffer)
@@ -162,15 +163,6 @@ def triplet_loss_seen_negs(emb, pos_emb, labels, anchors_tensor, seen_indices, m
         return torch.tensor(0.0, device=device, requires_grad=True)
 
     return loss_mat.sum() / (emb.size(0) * num_negs)
-
-
-def anchor_attraction_loss(emb, pos_emb):
-    """
-    emb: [B, D]      normalized
-    pos_emb: [B, D]  normalized anchor of ground-truth class
-    """
-    # 1 - cosine similarity
-    return (1.0 - (emb * pos_emb).sum(dim=1)).mean()
 
 
 def image_side_prototype_spread_loss(
