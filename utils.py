@@ -7,7 +7,7 @@ import pickle
 
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, Subset, Dataset
 
 
 class DualTransformDataset(Dataset):
