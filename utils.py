@@ -10,6 +10,24 @@ import torchvision.datasets as datasets
 from torch.utils.data import DataLoader, Subset
 
 
+class DualTransformDataset(Dataset):
+    def __init__(self, dataset, transform_aug, transform_raw):
+        self.dataset = dataset
+        self.transform_aug = transform_aug
+        self.transform_raw = transform_raw
+
+    def __getitem__(self, index):
+        img, label = self.dataset[index]
+
+        img_aug = self.transform_aug(img)
+        img_raw = self.transform_raw(img)
+
+        return img_aug, img_raw, label
+
+    def __len__(self):
+        return len(self.dataset)
+
+
 def load_anchors(path, device='cpu'):
     with open(path, 'rb') as f:
         anchors = pickle.load(f)
@@ -72,33 +90,46 @@ def semantic_distance_loss(emb, emb_prev, old_anchor_matrix):
 
 def make_cifar100_tasks(num_tasks, batch_size, augment=True):
     if augment:
-        transform_train = transforms.Compose([
+        transform_train_aug = transforms.Compose([
             transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
         ])
     else:
-        transform_train = transforms.Compose([
+        transform_train_aug = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
         ])
+
+    transform_raw = transforms.ToTensor()
+
     transform_test = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
     ])
-    train_full = datasets.CIFAR100(root="data", train=True, download=True, transform=transform_train)
+
+    train_full_raw = datasets.CIFAR100(root="data", train=True, download=True, transform=None)
     test_full = datasets.CIFAR100(root="data", train=False, download=True, transform=transform_test)
-    classes = train_full.classes
+
+    train_dataset_wrapper = DualTransformDataset(train_full_raw, transform_train_aug, transform_raw)
+
+    classes = train_full_raw.classes
     num_classes = len(classes)
     per_task = num_classes // num_tasks
     tasks = []
+
+    all_targets = np.array(train_full_raw.targets)
+    all_test_targets = np.array(test_full.targets)
+
     for t in range(num_tasks):
         start = t * per_task
         end = start + per_task if t < num_tasks - 1 else num_classes
-        train_idx = [i for i, (_, lbl) in enumerate(train_full) if start <= lbl < end]
-        test_idx = [i for i, (_, lbl) in enumerate(test_full) if start <= lbl < end]
-        train_subset = Subset(train_full, train_idx)
+
+        train_idx = np.where((all_targets >= start) & (all_targets < end))[0]
+        test_idx = np.where((all_test_targets >= start) & (all_test_targets < end))[0]
+
+        train_subset = Subset(train_dataset_wrapper, train_idx)
         test_subset = Subset(test_full, test_idx)
         train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=2)
         test_loader = DataLoader(test_subset, batch_size=batch_size, shuffle=False, num_workers=2)

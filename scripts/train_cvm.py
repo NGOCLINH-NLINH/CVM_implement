@@ -17,6 +17,8 @@ from sklearn.linear_model import LogisticRegression
 from tqdm import tqdm
 import random
 
+normalize_transform = transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
+
 
 def evaluate_all_seen(model, test_full, seen_indices, anchors_tensor, anchor_keys, device):
     # Build a test loader for all seen classes using test_full Subset
@@ -189,9 +191,9 @@ def main(cfg):
             model.train()
 
             K = 9  # number of negatives
-            for images, labels in train_loader:
+            for images, raw_images, labels in train_loader:
                 images_cuda = images.to(device)
-                labels_cuda = labels.to(device)  # global labels 0..99
+                labels_cuda = labels.to(device)
 
                 # current batch embeddings
                 emb = model(images_cuda)
@@ -240,11 +242,13 @@ def main(cfg):
 
                 # replay mixing: sample buffer and compute loss on replay items and mix
                 if len(buffer) > 0 and cfg['replay_batch'] > 0:
-                    buf_imgs, buf_labels = buffer.sample(cfg['replay_batch'])
-                    if buf_imgs is not None:
-                        buf_imgs = buf_imgs.to(device)
+                    buf_imgs_raw, buf_labels = buffer.sample(cfg['replay_batch'])
+                    if buf_imgs_raw is not None:
+                        buf_imgs_raw = buf_imgs_raw.to(device)
                         buf_labels = buf_labels.to(device)
-                        emb_buf = model(buf_imgs)
+
+                        buf_imgs_norm = normalize_transform(buf_imgs_raw)
+                        emb_buf = model(buf_imgs_norm)
                         pos_buf = anchors_tensor[buf_labels].to(device)
 
                         Lm_buf = triplet_loss_seen_negs(emb_buf, pos_buf, buf_labels, anchors_tensor, seen_inds,
@@ -258,7 +262,7 @@ def main(cfg):
                 optimizer.step()
 
                 # add to buffer
-                buffer.add_batch(images, labels)
+                buffer.add_batch(raw_images, labels)
 
                 pbar.update(1)
                 pbar.set_postfix({
