@@ -202,6 +202,11 @@ def main(cfg):
                 # current batch embeddings
                 emb = model(images_cuda)
 
+                if prev_model is not None and len(old_inds) > 0:
+                    old_anchor_mat = anchors_tensor[old_inds].to(device)
+                else:
+                    old_anchor_mat = None
+
                 # positive anchors per sample
                 pos = anchors_tensor[labels_cuda].to(device)
 
@@ -234,13 +239,12 @@ def main(cfg):
                 )
 
                 # compute Ld if prev_model exists and old anchors exist
-                if prev_model is None or len(old_inds) == 0:
-                    Ld = torch.tensor(0.0, device=device)
-                else:
+                if old_anchor_mat is not None:
                     with torch.no_grad():
                         emb_prev = prev_model(images_cuda)
-                    old_anchor_mat = anchors_tensor[old_inds].to(device)
                     Ld = semantic_distance_loss(emb, emb_prev, old_anchor_mat)
+                else:
+                    Ld = torch.tensor(0.0, device=device)
 
                 loss = Lm + cfg['beta'] * Ld + cfg['spread_lambda'] * L_spread
 
@@ -257,8 +261,14 @@ def main(cfg):
 
                         Lm_buf = triplet_loss_seen_negs(emb_buf, pos_buf, buf_labels, anchors_tensor, seen_inds,
                                                         margin=cfg['margin'])
-                        # no Ld for replay for simplicity, or could compute with prev_model
-                        loss = loss + cfg['replay_lambda'] * Lm_buf
+
+                        Ld_buf = torch.tensor(0.0, device=device)
+                        if old_anchor_mat is not None:
+                            with torch.no_grad():
+                                emb_prev_buf = prev_model(buf_imgs_aug)
+                            Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
+
+                        loss = loss + cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf)
 
                 optimizer.zero_grad()
                 loss.backward()
