@@ -17,7 +17,11 @@ from sklearn.linear_model import LogisticRegression
 from tqdm import tqdm
 import random
 
-normalize_transform = transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
+replay_transform = transforms.Compose([
+    transforms.RandomCrop(32, padding=4),
+    transforms.RandomHorizontalFlip(),
+    transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
+])
 
 
 def evaluate_all_seen(model, test_full, seen_indices, anchors_tensor, anchor_keys, device):
@@ -247,8 +251,8 @@ def main(cfg):
                         buf_imgs_raw = buf_imgs_raw.to(device)
                         buf_labels = buf_labels.to(device)
 
-                        buf_imgs_norm = normalize_transform(buf_imgs_raw)
-                        emb_buf = model(buf_imgs_norm)
+                        buf_imgs_aug = replay_transform(buf_imgs_raw)
+                        emb_buf = model(buf_imgs_aug)
                         pos_buf = anchors_tensor[buf_labels].to(device)
 
                         Lm_buf = triplet_loss_seen_negs(emb_buf, pos_buf, buf_labels, anchors_tensor, seen_inds,
