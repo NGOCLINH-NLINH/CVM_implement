@@ -268,7 +268,17 @@ def main(cfg):
                                 emb_prev_buf = prev_model(buf_imgs_aug)
                             Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
 
-                        loss = loss + cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf)
+                        L_spread_buf = image_side_prototype_spread_loss(
+                            emb_buf,
+                            buf_labels,
+                            anchors_tensor,
+                            seen_inds,
+                            delta=cfg['spread_delta']
+                        )
+
+                        loss = loss + cfg['replay_lambda'] * (Lm_buf
+                                                              + cfg['beta'] * Ld_buf
+                                                              + cfg['spread_lambda'] * L_spread_buf)
 
                 optimizer.zero_grad()
                 loss.backward()
