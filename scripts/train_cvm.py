@@ -12,7 +12,7 @@ import numpy as np
 from models.resnet_cvm import ResNetCVM
 from utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, \
     set_seed, triplet_loss_k_negs, triplet_loss_seen_negs, anchor_attraction_loss, image_side_prototype_spread_loss, \
-    adaptive_margin_triplet_loss_k_negs
+    adaptive_margin_triplet_loss_k_negs, adaptive_margin_triplet_loss_seen_negs
 from sklearn.linear_model import LogisticRegression
 from tqdm import tqdm
 import random
@@ -259,8 +259,13 @@ def main(cfg):
                         emb_buf = model(buf_imgs_aug)
                         pos_buf = anchors_tensor[buf_labels].to(device)
 
-                        Lm_buf = triplet_loss_seen_negs(emb_buf, pos_buf, buf_labels, anchors_tensor, seen_inds,
-                                                        margin=cfg['margin'])
+                        Lm_buf = adaptive_margin_triplet_loss_seen_negs(
+                            emb_buf,
+                            pos_buf,
+                            buf_labels,
+                            anchors_tensor,
+                            seen_inds,
+                            base_margin=cfg['margin'])
 
                         Ld_buf = torch.tensor(0.0, device=device)
                         if old_anchor_mat is not None:
@@ -268,17 +273,16 @@ def main(cfg):
                                 emb_prev_buf = prev_model(buf_imgs_aug)
                             Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
 
-                        L_spread_buf = image_side_prototype_spread_loss(
-                            emb_buf,
-                            buf_labels,
-                            anchors_tensor,
-                            seen_inds,
-                            delta=cfg['spread_delta']
-                        )
+                        # Khong co tac dung lam
+                        # L_spread_buf = image_side_prototype_spread_loss(
+                        #     emb_buf,
+                        #     buf_labels,
+                        #     anchors_tensor,
+                        #     seen_inds,
+                        #     delta=cfg['spread_delta']
+                        # )
 
-                        loss = loss + cfg['replay_lambda'] * (Lm_buf
-                                                              + cfg['beta'] * Ld_buf
-                                                              + cfg['spread_lambda'] * L_spread_buf)
+                        loss = loss + cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf)
 
                 optimizer.zero_grad()
                 loss.backward()

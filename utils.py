@@ -195,6 +195,55 @@ def triplet_loss_seen_negs(emb, pos_emb, labels, anchors_tensor, seen_indices, m
     return loss_mat.sum() / (emb.size(0) * num_negs)
 
 
+def adaptive_margin_triplet_loss_seen_negs(emb, pos_emb, labels, anchors_tensor, seen_indices, base_margin=0.1):
+    """
+    Kết hợp:
+    1. Scope: So sánh với TẤT CẢ seen_indices (như triplet_loss_seen_negs cũ).
+    2. Margin: Adaptive dựa trên Semantic Similarity (như adaptive_margin...k_negs).
+    """
+    device = emb.device
+    anchors_seen = anchors_tensor[seen_indices].to(device)  # [Num_Seen, Dim]
+
+    # 1. Tính khoảng cách từ ảnh đến Positive Anchor
+    # (B, D) * (B, D) -> sum -> (B)
+    cos_pos = (emb * pos_emb).sum(dim=1)
+    d_pos = 1.0 - cos_pos  # [Batch]
+
+    # 2. Tính khoảng cách từ ảnh đến TẤT CẢ Seen Anchors (Negative Candidates)
+    # [Batch, Dim] @ [Dim, Num_Seen] -> [Batch, Num_Seen]
+    cos_seen = emb @ anchors_seen.t()
+    d_seen = 1.0 - cos_seen
+
+    # 3. Tính ADAPTIVE MARGIN
+    # Cần tính độ tương đồng giữa Positive Anchor và Tất cả Seen Anchors
+    # pos_emb: [Batch, Dim] (chính là anchor của label đúng)
+    # anchors_seen: [Num_Seen, Dim]
+    # -> anchor_sim: [Batch, Num_Seen]
+    anchor_sim = pos_emb @ anchors_seen.t()
+
+    # Công thức adaptive: margin = base * (1 - sim(anchor_pos, anchor_neg))
+    # Nếu anchor_neg rất giống anchor_pos (VD: Chó & Sói), margin sẽ nhỏ.
+    # Nếu anchor_neg rất khác anchor_pos (VD: Chó & Máy bay), margin sẽ lớn (tiệm cận base_margin).
+    adaptive_margin = base_margin * (1.0 - anchor_sim).clamp(min=0.0)
+
+    # 4. Tính Loss Matrix
+    # Loss = ReLU(d_pos - d_neg + margin_adaptive)
+    # d_pos.unsqueeze(1): [Batch, 1] broadcast ra [Batch, Num_Seen]
+    loss_mat = torch.clamp(d_pos.unsqueeze(1) - d_seen + adaptive_margin, min=0.0)
+
+    # 5. Masking (Loại bỏ trường hợp Negative chính là Positive class)
+    seen_indices_tensor = torch.tensor(seen_indices, device=device).unsqueeze(0)  # [1, Num_Seen]
+    mask = (seen_indices_tensor == labels.unsqueeze(1))  # [Batch, Num_Seen]
+    loss_mat[mask] = 0.0
+
+    # 6. Normalize loss
+    num_negs = anchors_seen.size(0) - 1
+    if num_negs <= 0:
+        return torch.tensor(0.0, device=device, requires_grad=True)
+
+    return loss_mat.sum() / (emb.size(0) * num_negs)
+
+
 def anchor_attraction_loss(emb, pos_emb):
     """
     emb: [B, D]      normalized
