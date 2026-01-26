@@ -259,13 +259,13 @@ def main(cfg):
                         emb_buf = model(buf_imgs_aug)
                         pos_buf = anchors_tensor[buf_labels].to(device)
 
-                        Lm_buf = adaptive_margin_triplet_loss_seen_negs(
+                        Lm_buf = triplet_loss_seen_negs(
                             emb_buf,
                             pos_buf,
                             buf_labels,
                             anchors_tensor,
                             seen_inds,
-                            base_margin=cfg['margin'])
+                            margin=cfg['margin'])
 
                         Ld_buf = torch.tensor(0.0, device=device)
                         if old_anchor_mat is not None:
