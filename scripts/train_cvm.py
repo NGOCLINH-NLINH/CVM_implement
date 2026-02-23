@@ -266,10 +266,15 @@ def main(cfg):
 
                 loss = Lm + cfg['beta'] * Ld + cfg['spread_lambda'] * L_spread
 
-                if len(buffer) > 0 and cfg['replay_batch'] > 0 and cfg['replay_on']:
-                    buf_imgs_raw, buf_labels = buffer.sample(cfg['replay_batch'])
+                current_buffer_size = len(buffer)
+                if current_buffer_size > 0 and cfg['replay_batch'] > 0 and cfg['replay_on']:
+                    optimal_ratio = 32.0 / 500.0
+                    dynamic_replay_batch = int(current_buffer_size * optimal_ratio)
+                    dynamic_replay_batch = max(16, min(dynamic_replay_batch, current_buffer_size))
+
+                    buf_imgs_raw, buf_labels = buffer.sample(dynamic_replay_batch)
                     if buf_imgs_raw is not None:
-                        buf_imgs_raw = buf_imgs_raw.to(device);
+                        buf_imgs_raw = buf_imgs_raw.to(device)
                         buf_labels = buf_labels.to(device)
                         buf_imgs_aug = replay_transform(buf_imgs_raw)
                         emb_buf = model(buf_imgs_aug)
