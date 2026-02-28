@@ -165,6 +165,9 @@ def triplet_loss_k_negs(emb, pos_emb, neg_embs, margin=0.1):
 
 
 def triplet_loss_seen_negs(emb, pos_emb, labels, anchors_tensor, seen_indices, margin=0.1):
+    """
+    Chỉ tính Triplet Loss dựa trên các lớp đã học (seen_indices).
+    """
     device = emb.device
     anchors_seen = anchors_tensor[seen_indices].to(device)  # [Num_Seen, Dim]
 
@@ -176,20 +179,19 @@ def triplet_loss_seen_negs(emb, pos_emb, labels, anchors_tensor, seen_indices, m
     cos_seen = emb @ anchors_seen.t()
     d_seen = 1.0 - cos_seen
 
-    # Loss matrix: max(0, d_pos - d_neg + margin) Hinge loss
-    loss_mat = torch.clamp(d_pos.unsqueeze(1) - d_seen + margin, min=0.0)
-
     seen_indices_tensor = torch.tensor(seen_indices, device=device).unsqueeze(0)  # [1, Num_Seen]
     mask = (seen_indices_tensor == labels.unsqueeze(1))  # [Batch, Num_Seen]
 
+    # Loss matrix: max(0, d_pos - d_neg + margin)
+    loss_mat = torch.clamp(d_pos.unsqueeze(1) - d_seen + margin, min=0.0)
+
     loss_mat[mask] = 0.0
-    active_losses = loss_mat[loss_mat > 0]
 
     num_negs = anchors_seen.size(0) - 1
-    if active_losses.numel() == 0:
+    if num_negs <= 0:
         return torch.tensor(0.0, device=device, requires_grad=True)
 
-    return active_losses.mean()
+    return loss_mat.sum() / (emb.size(0) * num_negs)
 
 
 def adaptive_margin_triplet_loss_seen_negs(emb, pos_emb, labels, anchors_tensor, seen_indices, base_margin=0.1):
