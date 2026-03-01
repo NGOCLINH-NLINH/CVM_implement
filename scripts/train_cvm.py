@@ -171,7 +171,6 @@ def main(cfg):
 
     # tasks
     tasks, class_names = make_cifar100_tasks(cfg['num_tasks'], cfg['batch_size'], augment=True)
-    # Lưu ý: root="data" sẽ tạo folder data trong thư mục hiện hành khi chạy
     train_full = datasets.CIFAR100(root="data", train=True, download=True, transform=transforms.Compose([
         transforms.RandomCrop(32, padding=4),
         transforms.RandomHorizontalFlip(),
@@ -266,7 +265,7 @@ def main(cfg):
 
                 loss = Lm + cfg['beta'] * Ld + cfg['spread_lambda'] * L_spread
 
-                if len(buffer) > 0 and cfg['replay_batch'] > 0 and cfg['replay_on']:
+                if t > 0 and len(buffer) > 0 and cfg['replay_batch'] > 0 and cfg['replay_on']:
                     buf_imgs_raw, buf_labels = buffer.sample(cfg['replay_batch'])
                     if buf_imgs_raw is not None:
                         buf_imgs_raw = buf_imgs_raw.to(device)
@@ -278,12 +277,19 @@ def main(cfg):
                         Lm_buf = triplet_loss_seen_negs(emb_buf, pos_buf, buf_labels, anchors_tensor, seen_inds,
                                                         margin=cfg['margin'])
 
+                        if cfg['spread_lambda'] > 0:
+                            L_spread_buf = image_side_prototype_spread_loss(emb_buf, buf_labels, anchors_tensor,
+                                                                            seen_inds, delta=cfg['spread_delta'])
+                        else:
+                            L_spread_buf = torch.tensor(0.0, device=device)
+
                         Ld_buf = torch.tensor(0.0, device=device)
                         if old_anchor_mat is not None and cfg['beta'] > 0:
-                            with torch.no_grad(): emb_prev_buf = prev_model(buf_imgs_aug)
+                            with torch.no_grad():
+                                emb_prev_buf = prev_model(buf_imgs_aug)
                             Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
 
-                        loss += cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf)
+                        loss += cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf + cfg['spread_lambda'] * L_spread_buf)
 
                 optimizer.zero_grad()
                 loss.backward()
