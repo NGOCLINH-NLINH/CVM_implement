@@ -249,7 +249,7 @@ def main(cfg):
                 loss = Lm + cfg['beta'] * Ld + cfg['spread_lambda'] * L_spread
 
                 # replay mixing: sample buffer and compute loss on replay items and mix
-                if t> 0 and len(buffer) > 0 and cfg['replay_batch'] > 0:
+                if t > 0 and len(buffer) > 0 and cfg['replay_batch'] > 0:
                     buf_imgs_raw, buf_labels = buffer.sample(cfg['replay_batch'])
                     if buf_imgs_raw is not None:
                         buf_imgs_raw = buf_imgs_raw.to(device)
@@ -259,29 +259,29 @@ def main(cfg):
                         emb_buf = model(buf_imgs_aug)
                         pos_buf = anchors_tensor[buf_labels].to(device)
 
-                        neg_idx_list_buf = []
-                        for lbl in buf_labels.cpu().numpy():
-                            choices = [c for c in seen_inds if c != lbl]
-                            if len(choices) >= K:
-                                negs = random.sample(choices, k=K)
-                            elif len(choices) > 0:
-                                negs = random.choices(choices, k=K)
-                            else:
-                                negs = [lbl] * K
-                            neg_idx_list_buf.append(negs)
+                        # neg_idx_list_buf = []
+                        # for lbl in buf_labels.cpu().numpy():
+                        #     choices = [c for c in seen_inds if c != lbl]
+                        #     if len(choices) >= K:
+                        #         negs = random.sample(choices, k=K)
+                        #     elif len(choices) > 0:
+                        #         negs = random.choices(choices, k=K)
+                        #     else:
+                        #         negs = [lbl] * K
+                        #     neg_idx_list_buf.append(negs)
+                        #
+                        # neg_k_tensor_buf = anchors_tensor[
+                        #     torch.tensor(neg_idx_list_buf, dtype=torch.long, device=device)]
+                        #
+                        # Lm_buf = adaptive_margin_triplet_loss_k_negs(emb_buf, pos_buf, neg_k_tensor_buf, base_margin=cfg['margin'])
 
-                        neg_k_tensor_buf = anchors_tensor[
-                            torch.tensor(neg_idx_list_buf, dtype=torch.long, device=device)]
-
-                        Lm_buf = adaptive_margin_triplet_loss_k_negs(emb_buf, pos_buf, neg_k_tensor_buf, base_margin=cfg['margin'])
-
-                        # Lm_buf = triplet_loss_seen_negs(
-                        #     emb_buf,
-                        #     pos_buf,
-                        #     buf_labels,
-                        #     anchors_tensor,
-                        #     seen_inds,
-                        #     margin=cfg['margin'])
+                        Lm_buf = triplet_loss_seen_negs(
+                            emb_buf,
+                            pos_buf,
+                            buf_labels,
+                            anchors_tensor,
+                            seen_inds,
+                            margin=cfg['margin'])
 
                         Ld_buf = torch.tensor(0.0, device=device)
                         if old_anchor_mat is not None:
