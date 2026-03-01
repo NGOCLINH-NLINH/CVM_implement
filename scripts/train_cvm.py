@@ -249,7 +249,7 @@ def main(cfg):
                 loss = Lm + cfg['beta'] * Ld + cfg['spread_lambda'] * L_spread
 
                 # replay mixing: sample buffer and compute loss on replay items and mix
-                if len(buffer) > 0 and cfg['replay_batch'] > 0:
+                if t> 0 and len(buffer) > 0 and cfg['replay_batch'] > 0:
                     buf_imgs_raw, buf_labels = buffer.sample(cfg['replay_batch'])
                     if buf_imgs_raw is not None:
                         buf_imgs_raw = buf_imgs_raw.to(device)
@@ -273,11 +273,7 @@ def main(cfg):
                         neg_k_tensor_buf = anchors_tensor[
                             torch.tensor(neg_idx_list_buf, dtype=torch.long, device=device)]
 
-                        if cfg['adaptive_margin']:
-                            Lm_buf = adaptive_margin_triplet_loss_k_negs(emb_buf, pos_buf, neg_k_tensor_buf,
-                                                                         base_margin=cfg['margin'])
-                        else:
-                            Lm_buf = triplet_loss_k_negs(emb_buf, pos_buf, neg_k_tensor_buf, margin=cfg['margin'])
+                        Lm_buf = triplet_loss_k_negs(emb_buf, pos_buf, neg_k_tensor_buf, margin=cfg['margin'])
 
                         # Lm_buf = triplet_loss_seen_negs(
                         #     emb_buf,
