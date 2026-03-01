@@ -235,61 +235,108 @@ def main(cfg):
 
                 pos = anchors_tensor[labels_cuda].to(device)
 
-                neg_idx_list = []
-                for lbl in labels.numpy():
-                    choices = [c for c in cur_inds if c != lbl]
-                    if len(choices) >= K:
-                        negs = random.sample(choices, k=K)
+                if cfg.get('original_cvm', False):
+                    neg_idx_list = []
+                    for lbl in labels.numpy():
+                        choices = [c for c in cur_inds if c != lbl]
+                        neg_idx = random.choice(choices) if len(choices) > 0 else lbl
+                        neg_idx_list.append(neg_idx)
+
+                    neg_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
+                    Lm = triplet_loss_emb(emb, pos, neg_tensor, margin=cfg['margin'])
+
+                    if old_anchor_mat is not None and cfg['beta'] > 0:
+                        with torch.no_grad():
+                            emb_prev = prev_model(images_cuda)
+                        Ld = semantic_distance_loss(emb, emb_prev, old_anchor_mat)
                     else:
-                        negs = random.choices(choices, k=K)
-                    neg_idx_list.append(negs)
-                neg_k_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
+                        Ld = torch.tensor(0.0, device=device)
 
-                if cfg['adaptive_margin']:
-                    Lm = adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k_tensor, base_margin=cfg['margin'])
+                    loss = Lm + cfg['beta'] * Ld
+
+                    if t > 0 and len(buffer) > 0 and cfg['replay_batch'] > 0 and cfg.get('replay_on', True):
+                        buf_imgs_raw, buf_labels = buffer.sample(cfg['replay_batch'])
+                        if buf_imgs_raw is not None:
+                            buf_imgs_raw = buf_imgs_raw.to(device)
+                            buf_labels = buf_labels.to(device)
+                            buf_imgs_aug = replay_transform(buf_imgs_raw)
+                            emb_buf = model(buf_imgs_aug)
+                            pos_buf = anchors_tensor[buf_labels].to(device)
+
+                            neg_idx_list_buf = []
+                            for lbl in buf_labels.cpu().numpy():
+                                choices = [c for c in seen_inds if c != lbl]
+                                neg_idx = random.choice(choices) if len(choices) > 0 else lbl
+                                neg_idx_list_buf.append(neg_idx)
+
+                            neg_tensor_buf = anchors_tensor[
+                                torch.tensor(neg_idx_list_buf, dtype=torch.long, device=device)]
+                            Lm_buf = triplet_loss_emb(emb_buf, pos_buf, neg_tensor_buf, margin=cfg['margin'])
+
+                            Ld_buf = torch.tensor(0.0, device=device)
+                            if old_anchor_mat is not None and cfg['beta'] > 0:
+                                with torch.no_grad(): emb_prev_buf = prev_model(buf_imgs_aug)
+                                Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
+
+                            loss += cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf)
+
                 else:
-                    Lm = triplet_loss_k_negs(emb, pos, neg_k_tensor, margin=cfg['margin'])
-
-                if cfg['spread_lambda'] > 0:
-                    L_spread = image_side_prototype_spread_loss(emb, labels_cuda, anchors_tensor, seen_inds,
-                                                                delta=cfg['spread_delta'])
-                else:
-                    L_spread = torch.tensor(0.0, device=device)
-
-                if old_anchor_mat is not None and cfg['beta'] > 0:
-                    with torch.no_grad():
-                        emb_prev = prev_model(images_cuda)
-                    Ld = semantic_distance_loss(emb, emb_prev, old_anchor_mat)
-                else:
-                    Ld = torch.tensor(0.0, device=device)
-
-                loss = Lm + cfg['beta'] * Ld + cfg['spread_lambda'] * L_spread
-
-                if t > 0 and len(buffer) > 0 and cfg['replay_batch'] > 0 and cfg['replay_on']:
-                    buf_imgs_raw, buf_labels = buffer.sample(cfg['replay_batch'])
-                    if buf_imgs_raw is not None:
-                        buf_imgs_raw = buf_imgs_raw.to(device)
-                        buf_labels = buf_labels.to(device)
-                        buf_imgs_aug = replay_transform(buf_imgs_raw)
-                        emb_buf = model(buf_imgs_aug)
-                        pos_buf = anchors_tensor[buf_labels].to(device)
-
-                        Lm_buf = triplet_loss_seen_negs(emb_buf, pos_buf, buf_labels, anchors_tensor, seen_inds,
-                                                        margin=cfg['margin'])
-
-                        if cfg['spread_lambda'] > 0:
-                            L_spread_buf = image_side_prototype_spread_loss(emb_buf, buf_labels, anchors_tensor,
-                                                                            seen_inds, delta=cfg['spread_delta'])
+                    neg_idx_list = []
+                    for lbl in labels.numpy():
+                        choices = [c for c in cur_inds if c != lbl]
+                        if len(choices) >= K:
+                            negs = random.sample(choices, k=K)
                         else:
-                            L_spread_buf = torch.tensor(0.0, device=device)
+                            negs = random.choices(choices, k=K)
+                        neg_idx_list.append(negs)
+                    neg_k_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
 
-                        Ld_buf = torch.tensor(0.0, device=device)
-                        if old_anchor_mat is not None and cfg['beta'] > 0:
-                            with torch.no_grad():
-                                emb_prev_buf = prev_model(buf_imgs_aug)
-                            Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
+                    if cfg['adaptive_margin']:
+                        Lm = adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k_tensor, base_margin=cfg['margin'])
+                    else:
+                        Lm = triplet_loss_k_negs(emb, pos, neg_k_tensor, margin=cfg['margin'])
 
-                        loss += cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf + cfg['spread_lambda'] * L_spread_buf)
+                    if cfg['spread_lambda'] > 0:
+                        L_spread = image_side_prototype_spread_loss(emb, labels_cuda, anchors_tensor, seen_inds,
+                                                                    delta=cfg['spread_delta'])
+                    else:
+                        L_spread = torch.tensor(0.0, device=device)
+
+                    if old_anchor_mat is not None and cfg['beta'] > 0:
+                        with torch.no_grad():
+                            emb_prev = prev_model(images_cuda)
+                        Ld = semantic_distance_loss(emb, emb_prev, old_anchor_mat)
+                    else:
+                        Ld = torch.tensor(0.0, device=device)
+
+                    loss = Lm + cfg['beta'] * Ld + cfg['spread_lambda'] * L_spread
+
+                    if t > 0 and len(buffer) > 0 and cfg['replay_batch'] > 0 and cfg['replay_on']:
+                        buf_imgs_raw, buf_labels = buffer.sample(cfg['replay_batch'])
+                        if buf_imgs_raw is not None:
+                            buf_imgs_raw = buf_imgs_raw.to(device)
+                            buf_labels = buf_labels.to(device)
+                            buf_imgs_aug = replay_transform(buf_imgs_raw)
+                            emb_buf = model(buf_imgs_aug)
+                            pos_buf = anchors_tensor[buf_labels].to(device)
+
+                            Lm_buf = triplet_loss_seen_negs(emb_buf, pos_buf, buf_labels, anchors_tensor, seen_inds,
+                                                            margin=cfg['margin'])
+
+                            if cfg['spread_lambda'] > 0:
+                                L_spread_buf = image_side_prototype_spread_loss(emb_buf, buf_labels, anchors_tensor,
+                                                                                seen_inds, delta=cfg['spread_delta'])
+                            else:
+                                L_spread_buf = torch.tensor(0.0, device=device)
+
+                            Ld_buf = torch.tensor(0.0, device=device)
+                            if old_anchor_mat is not None and cfg['beta'] > 0:
+                                with torch.no_grad():
+                                    emb_prev_buf = prev_model(buf_imgs_aug)
+                                Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
+
+                            loss += cfg['replay_lambda'] * (
+                                        Lm_buf + cfg['beta'] * Ld_buf + cfg['spread_lambda'] * L_spread_buf)
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -381,6 +428,7 @@ if __name__ == "__main__":
     parser.add_argument('--margin', type=float, default=None)
     parser.add_argument('--memory-size', type=int, default=None)
     parser.add_argument('--no-adaptive', action='store_true')
+    parser.add_argument('--original-cvm', action='store_true', help='Use original CVM paper logic')
 
     args = parser.parse_args()
 
@@ -413,5 +461,8 @@ if __name__ == "__main__":
     cfg['spread_lambda'] = float(cfg['spread_lambda'])
     cfg['spread_delta'] = float(cfg['spread_delta'])
     cfg['replay_lambda'] = float(cfg['replay_lambda'])
+    cfg['original_cvm'] = args.original_cvm
 
+    mode_name = "ORIGINAL CVM" if cfg['original_cvm'] else "ACVM"
+    print(f"\nSTARTING EXPERIMENT MODE: {mode_name}")
     main(cfg)
