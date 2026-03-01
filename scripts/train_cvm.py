@@ -273,7 +273,7 @@ def main(cfg):
                         neg_k_tensor_buf = anchors_tensor[
                             torch.tensor(neg_idx_list_buf, dtype=torch.long, device=device)]
 
-                        Lm_buf = triplet_loss_k_negs(emb_buf, pos_buf, neg_k_tensor_buf, margin=cfg['margin'])
+                        Lm_buf = adaptive_margin_triplet_loss_k_negs(emb_buf, pos_buf, neg_k_tensor_buf, base_margin=cfg['margin'])
 
                         # Lm_buf = triplet_loss_seen_negs(
                         #     emb_buf,
