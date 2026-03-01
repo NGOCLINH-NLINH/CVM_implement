@@ -41,60 +41,34 @@ def load_anchors(path, device='cpu'):
 class ReservoirBuffer:
     def __init__(self, capacity=500, seed=42):
         self.capacity = capacity
-        self.n_seen = {}
-        self.buffer = {}
+        self.n_seen = 0
+        self.buffer = []
         random.seed(seed)
         np.random.seed(seed)
 
     def add_batch(self, images, labels):
         images = images.detach().cpu()
         labels = labels.detach().cpu()
-
-        for lbl in labels.numpy():
-            lbl = int(lbl)
-            if lbl not in self.buffer:
-                self.buffer[lbl] = []
-                self.n_seen[lbl] = 0
-
-        num_classes = len(self.buffer)
-        per_class_cap = self.capacity // max(1, num_classes)
-
         for i in range(images.shape[0]):
-            lbl = int(labels[i].item())
-            img = images[i].clone()
-
-            self.n_seen[lbl] += 1
-
-            if len(self.buffer[lbl]) < per_class_cap:
-                self.buffer[lbl].append(img)
+            item = (images[i].clone(), int(labels[i].item()))
+            self.n_seen += 1
+            if len(self.buffer) < self.capacity:
+                self.buffer.append(item)
             else:
-                j = random.randint(0, self.n_seen[lbl] - 1)
-                if j < per_class_cap:
-                    self.buffer[lbl][j] = img
-
-        for lbl in self.buffer.keys():
-            if len(self.buffer[lbl]) > per_class_cap:
-                self.buffer[lbl] = self.buffer[lbl][:per_class_cap]
+                j = random.randint(0, self.n_seen - 1)
+                if j < self.capacity:
+                    self.buffer[j] = item
 
     def sample(self, batch_size):
         if len(self.buffer) == 0:
             return None, None
-
-        all_items = []
-        for lbl, imgs in self.buffer.items():
-            for img in imgs:
-                all_items.append((img, lbl))
-
-        if len(all_items) == 0:
-            return None, None
-
-        batch = random.sample(all_items, k=min(batch_size, len(all_items)))
+        batch = random.sample(self.buffer, k=min(batch_size, len(self.buffer)))
         imgs = torch.stack([b[0] for b in batch])
         labels = torch.tensor([b[1] for b in batch], dtype=torch.long)
         return imgs, labels
 
     def __len__(self):
-        return sum(len(imgs) for imgs in self.buffer.values())
+        return len(self.buffer)
 
 
 def triplet_loss_emb(emb, pos_emb, neg_emb, margin=0.1):
