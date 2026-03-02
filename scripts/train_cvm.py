@@ -255,16 +255,16 @@ def main(cfg):
                     loss = Lm + cfg['beta'] * Ld
 
                     if t > 0 and len(buffer) > 0 and cfg['replay_batch'] > 0 and cfg.get('replay_on', True):
-                        buf_imgs_raw, buf_labels = buffer.sample(cfg['replay_batch'])
+                        buf_imgs_raw, buf_labels_cpu = buffer.sample(cfg['replay_batch'])
                         if buf_imgs_raw is not None:
                             buf_imgs_raw = buf_imgs_raw.to(device)
-                            buf_labels = buf_labels.to(device)
+                            buf_labels = buf_labels_cpu.to(device)
                             buf_imgs_aug = replay_transform(buf_imgs_raw)
                             emb_buf = model(buf_imgs_aug)
                             pos_buf = anchors_tensor[buf_labels].to(device)
 
                             neg_idx_list_buf = []
-                            for lbl in buf_labels.cpu().numpy():
+                            for lbl in buf_labels_cpu.numpy():
                                 choices = [c for c in seen_inds if c != lbl]
                                 neg_idx = random.choice(choices) if len(choices) > 0 else lbl
                                 neg_idx_list_buf.append(neg_idx)
