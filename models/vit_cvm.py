@@ -47,7 +47,7 @@ class ViT_ACVM(nn.Module):
     def __init__(self, num_tasks=10, rank=64):
         super().__init__()
         model_kwargs = dict(patch_size=16, embed_dim=384, depth=12, num_heads=6,
-                            n_tasks=num_tasks, r=rank)
+                            n_tasks=num_tasks, rank=rank)
 
         self.image_encoder = create_vit_small_lora(pretrained=True, **model_kwargs)
         self.num_task = 0
