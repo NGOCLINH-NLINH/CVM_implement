@@ -144,6 +144,8 @@ def main(cfg):
         print(">> [Stage 2] Training LoRA with Adaptive Triplet Loss...")
         model.train()
         total_steps = cfg['epochs_per_task'] * len(train_loader)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps, eta_min=1e-6)
+
         pbar = tqdm(total=total_steps, desc=f"Task {t}", dynamic_ncols=True)
 
         for epoch in range(cfg['epochs_per_task']):
@@ -156,7 +158,7 @@ def main(cfg):
                 K = 9
                 neg_idx_list = []
                 for lbl in labels.cpu().numpy():
-                    choices = [c for c in cur_inds if c != lbl]
+                    choices = [c for c in seen_inds if c != lbl]
                     if len(choices) >= K:
                         negs = random.sample(choices, k=K)
                     else:
@@ -171,6 +173,8 @@ def main(cfg):
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
                 optimizer.step()
+
+                scheduler.step()
 
                 pbar.update(1)
                 pbar.set_postfix({"Loss": f"{loss.item():.3f}"})
