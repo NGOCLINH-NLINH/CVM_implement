@@ -145,45 +145,29 @@ def set_seed(seed=1234):
 
 
 def triplet_loss_k_negs(emb, pos_emb, neg_embs, margin=0.1):
-    """
-    emb: [Batch, Dim]
-    pos_emb: [Batch, Dim]
-    neg_embs: [Batch, K, Dim]
-    """
-    # (B, D) * (B, D) -> sum(dim=1) -> (B)
     cos_pos = (emb * pos_emb).sum(dim=1)
-    d_pos = 1.0 - cos_pos  # [Batch]
+    d_pos = 1.0 - cos_pos
 
-    # emb.unsqueeze(1): [Batch, 1, Dim]
-    # (B, 1, D) * (B, K, D) -> sum(dim=2) -> (B, K)
     cos_neg = (emb.unsqueeze(1) * neg_embs).sum(dim=2)
-    d_neg = 1.0 - cos_neg  # [Batch, K]
-
-    # d_pos.unsqueeze(1) được broadcast để so sánh với từng giá trị trong d_neg
+    d_neg = 1.0 - cos_neg
     loss = torch.clamp(d_pos.unsqueeze(1) - d_neg + margin, min=0.0)
 
     return loss.mean()
 
 
 def triplet_loss_seen_negs(emb, pos_emb, labels, anchors_tensor, seen_indices, margin=0.1):
-    """
-    Chỉ tính Triplet Loss dựa trên các lớp đã học (seen_indices).
-    """
     device = emb.device
-    anchors_seen = anchors_tensor[seen_indices].to(device)  # [Num_Seen, Dim]
+    anchors_seen = anchors_tensor[seen_indices].to(device)
 
-    # Distance to positive
     cos_pos = (emb * pos_emb).sum(dim=1)
-    d_pos = 1.0 - cos_pos  # [Batch]
+    d_pos = 1.0 - cos_pos
 
-    # [Batch, Dim] @ [Dim, Num_Seen] -> [Batch, Num_Seen]
     cos_seen = emb @ anchors_seen.t()
     d_seen = 1.0 - cos_seen
 
-    seen_indices_tensor = torch.tensor(seen_indices, device=device).unsqueeze(0)  # [1, Num_Seen]
-    mask = (seen_indices_tensor == labels.unsqueeze(1))  # [Batch, Num_Seen]
+    seen_indices_tensor = torch.tensor(seen_indices, device=device).unsqueeze(0)
+    mask = (seen_indices_tensor == labels.unsqueeze(1))
 
-    # Loss matrix: max(0, d_pos - d_neg + margin)
     loss_mat = torch.clamp(d_pos.unsqueeze(1) - d_seen + margin, min=0.0)
 
     loss_mat[mask] = 0.0
@@ -196,47 +180,23 @@ def triplet_loss_seen_negs(emb, pos_emb, labels, anchors_tensor, seen_indices, m
 
 
 def adaptive_margin_triplet_loss_seen_negs(emb, pos_emb, labels, anchors_tensor, seen_indices, base_margin=0.1):
-    """
-    Kết hợp:
-    1. Scope: So sánh với TẤT CẢ seen_indices (như triplet_loss_seen_negs cũ).
-    2. Margin: Adaptive dựa trên Semantic Similarity (như adaptive_margin...k_negs).
-    """
     device = emb.device
-    anchors_seen = anchors_tensor[seen_indices].to(device)  # [Num_Seen, Dim]
+    anchors_seen = anchors_tensor[seen_indices].to(device)
 
-    # 1. Tính khoảng cách từ ảnh đến Positive Anchor
-    # (B, D) * (B, D) -> sum -> (B)
     cos_pos = (emb * pos_emb).sum(dim=1)
     d_pos = 1.0 - cos_pos  # [Batch]
 
-    # 2. Tính khoảng cách từ ảnh đến TẤT CẢ Seen Anchors (Negative Candidates)
-    # [Batch, Dim] @ [Dim, Num_Seen] -> [Batch, Num_Seen]
     cos_seen = emb @ anchors_seen.t()
     d_seen = 1.0 - cos_seen
 
-    # 3. Tính ADAPTIVE MARGIN
-    # Cần tính độ tương đồng giữa Positive Anchor và Tất cả Seen Anchors
-    # pos_emb: [Batch, Dim] (chính là anchor của label đúng)
-    # anchors_seen: [Num_Seen, Dim]
-    # -> anchor_sim: [Batch, Num_Seen]
     anchor_sim = pos_emb @ anchors_seen.t()
-
-    # Công thức adaptive: margin = base * (1 - sim(anchor_pos, anchor_neg))
-    # Nếu anchor_neg rất giống anchor_pos (VD: Chó & Sói), margin sẽ nhỏ.
-    # Nếu anchor_neg rất khác anchor_pos (VD: Chó & Máy bay), margin sẽ lớn (tiệm cận base_margin).
     adaptive_margin = base_margin * (1.0 - anchor_sim).clamp(min=0.0)
-
-    # 4. Tính Loss Matrix
-    # Loss = ReLU(d_pos - d_neg + margin_adaptive)
-    # d_pos.unsqueeze(1): [Batch, 1] broadcast ra [Batch, Num_Seen]
     loss_mat = torch.clamp(d_pos.unsqueeze(1) - d_seen + adaptive_margin, min=0.0)
 
-    # 5. Masking (Loại bỏ trường hợp Negative chính là Positive class)
-    seen_indices_tensor = torch.tensor(seen_indices, device=device).unsqueeze(0)  # [1, Num_Seen]
-    mask = (seen_indices_tensor == labels.unsqueeze(1))  # [Batch, Num_Seen]
+    seen_indices_tensor = torch.tensor(seen_indices, device=device).unsqueeze(0)
+    mask = (seen_indices_tensor == labels.unsqueeze(1))
     loss_mat[mask] = 0.0
 
-    # 6. Normalize loss
     num_negs = anchors_seen.size(0) - 1
     if num_negs <= 0:
         return torch.tensor(0.0, device=device, requires_grad=True)
@@ -245,85 +205,37 @@ def adaptive_margin_triplet_loss_seen_negs(emb, pos_emb, labels, anchors_tensor,
 
 
 def anchor_attraction_loss(emb, pos_emb):
-    """
-    emb: [B, D]      normalized
-    pos_emb: [B, D]  normalized anchor of ground-truth class
-    """
-    # 1 - cosine similarity
     return (1.0 - (emb * pos_emb).sum(dim=1)).mean()
 
 
-def image_side_prototype_spread_loss(
-    emb,
-    labels,
-    anchors_tensor,
-    seen_indices,
-    delta=0.3
-):
-    """
-    Image-side Prototype Spread Regularization
-
-    emb:            [B, D] normalized image embeddings
-    labels:         [B] ground-truth global labels
-    anchors_tensor: [C, D] normalized anchors (all classes)
-    seen_indices:   list[int] seen class indices
-    delta:          cosine similarity threshold
-    """
+def image_side_prototype_spread_loss(emb, labels, anchors_tensor, seen_indices, delta=0.3):
     device = emb.device
 
     if len(seen_indices) <= 1:
         return torch.tensor(0.0, device=device)
 
-    anchors_seen = anchors_tensor[seen_indices].to(device)  # [Ns, D]
+    anchors_seen = anchors_tensor[seen_indices].to(device)
 
-    # cosine similarity: [B, Ns]
     cos_sim = emb @ anchors_seen.t()
+    seen_idx_tensor = torch.tensor(seen_indices, device=device).unsqueeze(0)
+    pos_mask = (seen_idx_tensor == labels.unsqueeze(1))
 
-    # build mask to remove positive anchor
-    seen_idx_tensor = torch.tensor(seen_indices, device=device).unsqueeze(0)  # [1, Ns]
-    pos_mask = (seen_idx_tensor == labels.unsqueeze(1))  # [B, Ns]
-
-    # only penalize negatives
     neg_cos = cos_sim.masked_fill(pos_mask, -1.0)
 
-    # hinge: max(0, cos - delta)
     loss_mat = torch.clamp(neg_cos - delta, min=0.0)
 
-    # normalize by number of negatives
     num_negs = anchors_seen.size(0) - 1
     return loss_mat.sum() / (emb.size(0) * num_negs)
 
 
-def adaptive_margin_triplet_loss_k_negs(
-    emb,              # [B, D] image embeddings (L2-normalized)
-    pos,              # [B, D] positive anchors (L2-normalized)
-    neg_k,            # [B, K, D] negative anchors (L2-normalized)
-    base_margin=0.1,
-    reduction="mean"
-):
-    """
-    Adaptive-margin triplet loss with K negatives per sample.
+def adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k, base_margin=0.1, reduction="mean"):
+    sim_pos = (emb * pos).sum(dim=1, keepdim=True)
+    sim_neg = (emb.unsqueeze(1) * neg_k).sum(dim=2)
 
-    Margin is scaled by anchor-anchor similarity:
-        m_ij = base_margin * (1 - cos(a_pos, a_neg_j))
+    anchor_sim = (pos.unsqueeze(1) * neg_k).sum(dim=2)
 
-    Returns:
-        scalar loss
-    """
-
-    # cosine similarities
-    sim_pos = (emb * pos).sum(dim=1, keepdim=True)      # [B, 1]
-    sim_neg = (emb.unsqueeze(1) * neg_k).sum(dim=2)     # [B, K]
-
-    # anchor-anchor similarity
-    anchor_sim = (pos.unsqueeze(1) * neg_k).sum(dim=2)  # [B, K]
-
-    # adaptive margin
     adaptive_margin = base_margin * (1.0 - anchor_sim).clamp(min=0.0)
-
-    # triplet hinge
-    loss = F.relu(sim_neg - sim_pos + adaptive_margin)  # [B, K]
-
+    loss = F.relu(sim_neg - sim_pos + adaptive_margin)
     if reduction == "mean":
         return loss.mean()
     elif reduction == "sum":

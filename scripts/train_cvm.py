@@ -32,7 +32,6 @@ replay_transform = transforms.Compose([
 
 
 def evaluate_all_seen(model, test_full, seen_indices, anchors_tensor, anchor_keys, device):
-    # Build a test loader for all seen classes using test_full Subset
     idxs = [i for i, (_, lbl) in enumerate(test_full) if lbl in seen_indices]
     if len(idxs) == 0:
         return 0.0
@@ -47,7 +46,7 @@ def evaluate_all_seen(model, test_full, seen_indices, anchors_tensor, anchor_key
             emb = model(images)
             sims = emb @ anchors_seen.t()
             preds = sims.argmax(dim=1).cpu().numpy()
-            global_preds = [seen_indices[p] for p in preds]  # convert index in seen list -> global class idx
+            global_preds = [seen_indices[p] for p in preds]
             true = labels.numpy()
             correct += sum([1 for i in range(len(true)) if global_preds[i] == true[i]])
             total += len(true)
@@ -55,7 +54,6 @@ def evaluate_all_seen(model, test_full, seen_indices, anchors_tensor, anchor_key
 
 
 def evaluate_task_full_anchors(model, test_full, task_class_inds, anchors_tensor, anchor_keys, device):
-    # Evaluate accuracy of ONE task using FULL anchor set
     idxs = [i for i, (_, lbl) in enumerate(test_full) if lbl in task_class_inds]
     if len(idxs) == 0:
         return 0.0
@@ -79,7 +77,6 @@ def evaluate_task_full_anchors(model, test_full, task_class_inds, anchors_tensor
 
 
 def zero_shot_eval(model, anchors_tensor, unseen_indices, test_full, device):
-    # For zero-shot CVM: build anchor embeddings for unseen classes and test on their test examples using nearest anchor
     if len(unseen_indices) == 0:
         return 0.0
     loader = DataLoader(Subset(test_full, [i for i, (_, l) in enumerate(test_full) if l in unseen_indices]),
@@ -141,15 +138,12 @@ def linear_probe_all(model, train_full, test_full, seen_indices, device, out_dim
 
 
 def compute_forgetting(eval_history):
-    """
-    eval_history[t][i]: accuracy of task i after training task t
-    """
     T = len(eval_history)
     forgetting = []
 
-    for i in range(T - 1):  # last task has no forgetting
+    for i in range(T - 1):
         acc_i_over_time = [eval_history[t][i] for t in range(i, T)]
-        max_acc = max(acc_i_over_time[:-1])  # before final
+        max_acc = max(acc_i_over_time[:-1])
         final_acc = acc_i_over_time[-1]
         forgetting.append(max_acc - final_acc)
 
@@ -182,9 +176,7 @@ def main(cfg):
         transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
     ]))
 
-    # anchors
     if not os.path.exists(cfg['anchors_path']):
-        # Fallback check for relative path issues
         if os.path.exists(os.path.join('..', cfg['anchors_path'])):
             cfg['anchors_path'] = os.path.join('..', cfg['anchors_path'])
 
@@ -199,10 +191,10 @@ def main(cfg):
 
     seen_inds = []
 
-    seen_acc_history = []  # Accuracy on all seen classes after each task
-    zero_shot_history = []  # Zero-shot accuracy on unseen classes after each task
-    linear_probe_history = []  # Linear probe accuracy after each task
-    eval_history = []  # Detailed per-task accuracy matrix (for forgetting)
+    seen_acc_history = []
+    zero_shot_history = []
+    linear_probe_history = []
+    eval_history = []
 
     Path(cfg['checkpoints_dir']).mkdir(parents=True, exist_ok=True)
 
@@ -354,23 +346,19 @@ def main(cfg):
 
         print(f"--- Evaluation after Task {t} ---")
 
-        # 1. ACCURACY ON ALL SEEN CLASSES
         acc_all_seen = evaluate_all_seen(model, test_full, seen_inds, anchors_tensor, anchor_keys, device)
         seen_acc_history.append(acc_all_seen)
         print(f"Acc on all seen classes after task {t}: {acc_all_seen:.4f}")
 
-        # 2. LINEAR PROBING SCORE FOR SEEN CLASSES
         lp_acc = linear_probe_all(model, train_full, test_full, seen_inds, device, cfg['out_dim'])
         linear_probe_history.append(lp_acc)
         print(f"Linear probe acc on seen classes after task {t}: {lp_acc:.4f}")
 
-        # 3. ZERO-SHOT ON UNSEEN CLASSES
         unseen_inds = [i for i in range(len(anchor_keys)) if i not in seen_inds]
         zs = zero_shot_eval(model, anchors_tensor, unseen_inds, test_full, device)
         zero_shot_history.append(zs)
         print(f"Zero-shot acc on unseen classes after task {t}: {zs:.4f}")
 
-        # 4. FORGETTING HISTORY
         per_task_accs = []
         for i_task, (_, _, t_classes) in enumerate(tasks):
             if i_task > t:
@@ -381,7 +369,6 @@ def main(cfg):
                 per_task_accs.append(acc_old_task)
         eval_history.append(per_task_accs)
 
-    # Final Metrics
     fw_score, _ = compute_forgetting(eval_history)
     avg_acc_final = np.mean(seen_acc_history)
 
