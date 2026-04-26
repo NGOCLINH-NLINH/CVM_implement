@@ -152,7 +152,7 @@ class Adam(Optimizer):
         state['step'] += 1
 
         if group['weight_decay'] != 0:
-            grad.add_(p.data, alpha=group['weight_decay'])
+            grad.add_(p.data, alpha=float(group['weight_decay']))
 
         # Decay the first and second moment running average coefficient
         exp_avg.mul_(beta1).add_(grad, alpha=1 - beta1)
