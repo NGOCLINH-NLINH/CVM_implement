@@ -23,7 +23,8 @@ from utils.utils import (load_anchors, make_cifar100_tasks, set_seed, adaptive_m
 
 def evaluate_all_seen(model, test_full, seen_indices, anchors_tensor, device):
     idxs = [i for i, (_, lbl) in enumerate(test_full) if lbl in seen_indices]
-    if len(idxs) == 0: return 0.0
+    if len(idxs) == 0:
+        return 0.0
     loader = DataLoader(Subset(test_full, idxs), batch_size=128, shuffle=False, num_workers=2)
     model.eval()
     anchors_seen = anchors_tensor[seen_indices].to(device)
@@ -41,7 +42,8 @@ def evaluate_all_seen(model, test_full, seen_indices, anchors_tensor, device):
 
 
 def zero_shot_eval(model, anchors_tensor, unseen_indices, test_full, device):
-    if len(unseen_indices) == 0: return 0.0
+    if len(unseen_indices) == 0:
+        return 0.0
     loader = DataLoader(Subset(test_full, [i for i, (_, l) in enumerate(test_full) if l in unseen_indices]),
                         batch_size=128, shuffle=False, num_workers=2)
     anchors_unseen = anchors_tensor[unseen_indices].to(device)
@@ -52,6 +54,28 @@ def zero_shot_eval(model, anchors_tensor, unseen_indices, test_full, device):
             sims = emb @ anchors_unseen.t()
             preds = sims.argmax(dim=1).cpu().numpy()
             global_preds = [unseen_indices[p] for p in preds]
+            true = labels.numpy()
+            correct += sum([1 for i in range(len(true)) if global_preds[i] == true[i]])
+            total += len(true)
+    return correct / total if total > 0 else 0.0
+
+
+def evaluate_specific_task(model, test_full, eval_indices, seen_indices, anchors_tensor, device):
+    idxs = [i for i, (_, lbl) in enumerate(test_full) if lbl in eval_indices]
+    if len(idxs) == 0:
+        return 0.0
+    loader = DataLoader(Subset(test_full, idxs), batch_size=128, shuffle=False, num_workers=2)
+
+    model.eval()
+    anchors_seen = anchors_tensor[seen_indices].to(device)
+    correct, total = 0, 0
+    with torch.no_grad():
+        for images, labels in loader:
+            emb = model(images.to(device))
+            sims = emb @ anchors_seen.t()
+            preds = sims.argmax(dim=1).cpu().numpy()
+
+            global_preds = [seen_indices[p] for p in preds]
             true = labels.numpy()
             correct += sum([1 for i in range(len(true)) if global_preds[i] == true[i]])
             total += len(true)
@@ -84,7 +108,11 @@ def main(cfg):
     zero_shot_history = []
     Path(cfg['checkpoints_dir']).mkdir(parents=True, exist_ok=True)
 
+    task_classes_list = []
+
     for t, (train_loader, test_loader, class_inds) in enumerate(tasks):
+        task_classes_list.append(class_inds)
+
         print(f"\n=== Training Task {t} (Classes: {min(class_inds)}-{max(class_inds)}) ===")
         cur_inds = class_inds
         seen_inds += cur_inds
@@ -148,15 +176,21 @@ def main(cfg):
                 pbar.set_postfix({"Loss": f"{loss.item():.3f}"})
         pbar.close()
 
-        print(f"\n--- Evaluation after Task {t} ---")
-        acc_all_seen = evaluate_all_seen(model, test_full, seen_inds, anchors_tensor, device)
+        task_accs = []
+        for i in range(t + 1):
+            acc_i = evaluate_specific_task(model, test_full, task_classes_list[i], seen_inds, anchors_tensor, device)
+            task_accs.append(acc_i)
+            print(
+                f"  -> Acc on Task {i} (Classes {min(task_classes_list[i])}-{max(task_classes_list[i])}): {acc_i:.4f}")
+
+        acc_all_seen = np.mean(task_accs)
         seen_acc_history.append(acc_all_seen)
-        print(f"Accuracy on all SEEN classes: {acc_all_seen:.4f}")
+        print(f"[*] Average Accuracy on all SEEN tasks: {acc_all_seen:.4f}")
 
         unseen_inds = [i for i in range(len(anchor_keys)) if i not in seen_inds]
         zs = zero_shot_eval(model, anchors_tensor, unseen_inds, test_full, device)
         zero_shot_history.append(zs)
-        print(f"Zero-shot accuracy on UNSEEN classes: {zs:.4f}")
+        print(f"[*] Zero-shot accuracy on UNSEEN classes: {zs:.4f}")
 
     print(f"\n{'=' * 50}")
     print(f"FINAL RESULTS")
