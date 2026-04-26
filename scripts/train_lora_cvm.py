@@ -18,6 +18,9 @@ from utils.adam_proj import Adam
 from utils.utils import (load_anchors, make_cifar100_tasks, set_seed, adaptive_margin_triplet_loss_k_negs)
 
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+
 def evaluate_all_seen(model, test_full, seen_indices, anchors_tensor, device):
     idxs = [i for i, (_, lbl) in enumerate(test_full) if lbl in seen_indices]
     if len(idxs) == 0: return 0.0
