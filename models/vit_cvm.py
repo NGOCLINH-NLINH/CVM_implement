@@ -65,10 +65,10 @@ class ViT_ACVM(nn.Module):
         for name, param in self.named_parameters():
             param.requires_grad_(False)
             task_id = self.num_task - 1
-            if f"lora_A_k.{task_id}." in name: param.requires_grad_(True)
-            if f"lora_A_v.{task_id}." in name: param.requires_grad_(True)
-            if f"lora_B_k.{task_id}." in name: param.requires_grad_(True)
-            if f"lora_B_v.{task_id}." in name: param.requires_grad_(True)
+            if f"lora_A_k.{task_id}" in name: param.requires_grad_(True)
+            if f"lora_A_v.{task_id}" in name: param.requires_grad_(True)
+            if f"lora_B_k.{task_id}" in name: param.requires_grad_(True)
+            if f"lora_B_v.{task_id}" in name: param.requires_grad_(True)
 
     def extract_fea_in(self, device):
         task_id = self.num_task - 1

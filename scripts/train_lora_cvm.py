@@ -93,6 +93,11 @@ def main(cfg):
         model.freeze_for_task()
 
         trainable_params = [p for n, p in model.named_parameters() if p.requires_grad]
+        num_trainable = sum(p.numel() for p in trainable_params)
+        print(f">>> DEBUG: Number of params being trained: {num_trainable}")
+        if num_trainable == 0:
+            raise ValueError("FATAL: None param is being trained")
+
         opt_groups = [{'params': trainable_params, 'svd': True, 'thres': 0.99}]
         optimizer = Adam(opt_groups, lr=cfg['lr'], weight_decay=cfg['weight_decay'])
 
