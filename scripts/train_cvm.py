@@ -20,8 +20,8 @@ import random
 from tqdm import tqdm
 
 from models.resnet_cvm import ResNetCVM
-from utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, \
-    set_seed, triplet_loss_k_negs, triplet_loss_seen_negs, anchor_attraction_loss, image_side_prototype_spread_loss, \
+from utils.utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, \
+    set_seed, triplet_loss_k_negs, triplet_loss_seen_negs, image_side_prototype_spread_loss, \
     adaptive_margin_triplet_loss_k_negs
 
 replay_transform = transforms.Compose([
