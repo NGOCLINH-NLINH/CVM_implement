@@ -1,5 +1,8 @@
 import sys
 import os
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import argparse
 import yaml
 import json
@@ -16,9 +19,6 @@ from tqdm import tqdm
 from models.vit_cvm import ViT_ACVM
 from utils.adam_proj import Adam
 from utils.utils import (load_anchors, make_cifar100_tasks, set_seed, adaptive_margin_triplet_loss_k_negs)
-
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 
 def evaluate_all_seen(model, test_full, seen_indices, anchors_tensor, device):
