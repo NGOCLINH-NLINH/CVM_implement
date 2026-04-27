@@ -127,26 +127,16 @@ def main(cfg):
         if num_trainable == 0:
             raise ValueError("FATAL: None param is being trained")
 
-        # params_svd = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_A' in n]
-        # params_normal = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_B' in n]
+        params_svd = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_A' in n]
+        params_normal = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_B' in n]
 
-        trainable_params = [p for n, p in model.named_parameters() if p.requires_grad]
         wd_svd = 0.0 if t > 0 else cfg.get('weight_decay_normal', 0.0005)
 
-        # opt_groups = [
-        #     {'params': params_svd, 'svd': True, 'thres': cfg.get('thres', 0.995), 'weight_decay': wd_svd, 'lr': cfg['lr'] * 3.0},
-        #     {'params': params_normal, 'svd': False, 'weight_decay': cfg.get('weight_decay_normal', 0.0005), 'lr': cfg['lr']}
-        # ]
-
         opt_groups = [
-            {
-                'params': trainable_params,
-                'svd': True,
-                'thres': cfg.get('thres', 0.99),
-                'weight_decay': cfg.get('weight_decay_normal', 0.0005),
-                'lr': cfg['lr'] * 2.0
-            }
+            {'params': params_svd, 'svd': True, 'thres': cfg.get('thres', 0.995), 'weight_decay': wd_svd, 'lr': cfg['lr'] * 3.0},
+            {'params': params_normal, 'svd': False, 'weight_decay': cfg.get('weight_decay_normal', 0.0005), 'lr': cfg['lr']}
         ]
+
         optimizer = Adam(opt_groups, lr=cfg['lr'])
 
         if t > 0:
@@ -196,8 +186,18 @@ def main(cfg):
                 # loss = loss_trip + cfg.get('attr_loss_weight', 0.1) * loss_attr
 
                 sims = emb @ anchors_tensor.t()
-                logits = sims / cfg['temperature']
-                loss = torch.nn.functional.cross_entropy(logits, labels)
+                # logits = sims / cfg['temperature']
+                # loss = torch.nn.functional.cross_entropy(logits, labels)
+                min_c, max_c = min(class_inds), max(class_inds)
+                cur_sims = sims[:, min_c: max_c + 1]
+
+                # Map labels về index từ 0 cho hàm CE
+                cur_labels = labels - min_c
+
+                logits = cur_sims / cfg['temperature']
+                loss_ce = torch.nn.functional.cross_entropy(logits, cur_labels)
+
+                loss = loss_ce
 
                 optimizer.zero_grad()
                 loss.backward()
