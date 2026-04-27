@@ -126,7 +126,13 @@ def main(cfg):
         if num_trainable == 0:
             raise ValueError("FATAL: None param is being trained")
 
-        opt_groups = [{'params': trainable_params, 'svd': True, 'thres': 0.99}]
+        params_svd = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_A' in n]
+        params_normal = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_B' in n]
+
+        opt_groups = [
+            {'params': params_svd, 'svd': True, 'thres': cfg.get('thres', 0.995)},
+            {'params': params_normal, 'svd': False}
+        ]
         optimizer = Adam(opt_groups, lr=cfg['lr'], weight_decay=cfg['weight_decay'])
 
         if t > 0:
@@ -168,8 +174,8 @@ def main(cfg):
                 neg_k_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
 
                 loss_trip = adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k_tensor, base_margin=cfg['margin'])
-                loss_attr = (1.0 - (emb * pos).sum(dim=1)).mean()
-                loss = loss_trip + loss_attr
+                # loss_attr = (1.0 - (emb * pos).sum(dim=1)).mean()
+                loss = loss_trip
 
                 optimizer.zero_grad()
                 loss.backward()
