@@ -139,8 +139,13 @@ def main(cfg):
         # ]
 
         opt_groups = [
-            {'params': trainable_params, 'svd': True, 'thres': cfg.get('thres', 0.995), 'weight_decay': wd_svd,
-             'lr': cfg['lr'] * 3.0}
+            {
+                'params': trainable_params,
+                'svd': True,
+                'thres': cfg.get('thres', 0.99),
+                'weight_decay': cfg.get('weight_decay_normal', 0.0005),
+                'lr': cfg['lr'] * 2.0
+            }
         ]
         optimizer = Adam(opt_groups, lr=cfg['lr'])
 
@@ -171,7 +176,7 @@ def main(cfg):
                 emb = model(images_aug)
                 pos = anchors_tensor[labels]
 
-                K = cfg.get('k_negs', 9)
+                # K = cfg.get('k_negs', 9)
                 # neg_idx_list = []
                 # for lbl in labels.cpu().numpy():
                 #     choices = [c for c in seen_inds if c != lbl]
@@ -191,7 +196,7 @@ def main(cfg):
                 # loss = loss_trip + cfg.get('attr_loss_weight', 0.1) * loss_attr
 
                 sims = emb @ anchors_tensor.t()
-                logits = sims / 0.05
+                logits = sims / cfg['temperature']
                 loss = torch.nn.functional.cross_entropy(logits, labels)
 
                 optimizer.zero_grad()
