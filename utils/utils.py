@@ -184,7 +184,7 @@ def adaptive_margin_triplet_loss_seen_negs(emb, pos_emb, labels, anchors_tensor,
     anchors_seen = anchors_tensor[seen_indices].to(device)
 
     cos_pos = (emb * pos_emb).sum(dim=1)
-    d_pos = 1.0 - cos_pos  # [Batch]
+    d_pos = 1.0 - cos_pos
 
     cos_seen = emb @ anchors_seen.t()
     d_seen = 1.0 - cos_seen

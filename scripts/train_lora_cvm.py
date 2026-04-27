@@ -18,7 +18,8 @@ from tqdm import tqdm
 
 from models.vit_cvm import ViT_ACVM
 from utils.adam_proj import Adam
-from utils.utils import (load_anchors, make_cifar100_tasks, set_seed, adaptive_margin_triplet_loss_k_negs)
+from utils.utils import (load_anchors, make_cifar100_tasks, set_seed, adaptive_margin_triplet_loss_k_negs,
+                         adaptive_margin_triplet_loss_seen_negs)
 
 
 def evaluate_all_seen(model, test_full, seen_indices, anchors_tensor, device):
@@ -163,18 +164,20 @@ def main(cfg):
                 pos = anchors_tensor[labels]
 
                 K = cfg.get('k_negs', 9)
-                neg_idx_list = []
-                for lbl in labels.cpu().numpy():
-                    choices = [c for c in seen_inds if c != lbl]
-                    if len(choices) >= K:
-                        negs = random.sample(choices, k=K)
-                    else:
-                        negs = random.choices(choices, k=K) if choices else [lbl] * K
-                    neg_idx_list.append(negs)
+                # neg_idx_list = []
+                # for lbl in labels.cpu().numpy():
+                #     choices = [c for c in seen_inds if c != lbl]
+                #     if len(choices) >= K:
+                #         negs = random.sample(choices, k=K)
+                #     else:
+                #         negs = random.choices(choices, k=K) if choices else [lbl] * K
+                #     neg_idx_list.append(negs)
+                #
+                # neg_k_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
 
-                neg_k_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
-
-                loss_trip = adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k_tensor, base_margin=cfg['margin'])
+                # loss_trip = adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k_tensor, base_margin=cfg['margin'])
+                loss_trip = adaptive_margin_triplet_loss_seen_negs(emb, pos, labels, anchors_tensor, seen_inds,
+                                                                   base_margin=cfg['margin'])
                 loss_attr = (1.0 - (emb * pos).sum(dim=1)).mean()
                 loss = loss_trip + cfg.get('attr_loss_weight', 0.1) * loss_attr
 
