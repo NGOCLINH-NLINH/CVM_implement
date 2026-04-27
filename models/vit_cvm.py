@@ -12,7 +12,7 @@ class ViT_lora_co(VisionTransformer):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    def forward_features(self, x, task=-1, get_cur_x=False):
+    def forward_features(self, x, *args, task=-1, get_cur_x=False, **kwargs):
         x = self.patch_embed(x)
         x = torch.cat((self.cls_token.expand(x.shape[0], -1, -1), x), dim=1)
         x = self.pos_drop(x + self.pos_embed)
@@ -23,7 +23,7 @@ class ViT_lora_co(VisionTransformer):
         x = self.norm(x)
         return x
 
-    def forward(self, x, task=-1, get_cur_x=False):
+    def forward(self, x, *args, task=-1, get_cur_x=False, **kwargs):
         x = self.forward_features(x, task=task, get_cur_x=get_cur_x)
         if self.global_pool:
             x = x[:, 1:].mean(dim=1) if self.global_pool == 'avg' else x[:, 0]
