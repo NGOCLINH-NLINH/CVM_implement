@@ -24,11 +24,9 @@ class ViT_lora_co(VisionTransformer):
         return x
 
     def forward(self, x, *args, task=-1, get_cur_x=False, **kwargs):
-        x = self.forward_features(x, task=task, get_cur_x=get_cur_x)
-        if self.global_pool:
-            x = x[:, 1:].mean(dim=1) if self.global_pool == 'avg' else x[:, 0]
-        x = self.fc_norm(x)
-        return x
+        task_id = self.num_task - 1 if self.num_task > 0 else 0
+        cls_feature = self.image_encoder(x, task=task_id, get_cur_x=get_cur_x)
+        return F.normalize(cls_feature, p=2, dim=1)
 
 
 def create_vit_small_lora(pretrained=True, **kwargs):
