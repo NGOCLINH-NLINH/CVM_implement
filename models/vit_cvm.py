@@ -53,8 +53,16 @@ class ViT_ACVM(nn.Module):
         self.num_task = 0
         self.fea_in = defaultdict(dict)
 
+        for name, param in self.named_parameters():
+            if 'lora_B' in name:
+                nn.init.zeros_(param.data)
+
     def forward(self, x, get_cur_x=False):
-        task_id = self.num_task - 1 if self.num_task > 0 else 0
+        if self.training or get_cur_x:
+            task_id = self.num_task - 1 if self.num_task > 0 else 0
+        else:
+            task_id = -1
+
         cls_feature = self.image_encoder(x, task=task_id, get_cur_x=get_cur_x)
         return F.normalize(cls_feature, p=2, dim=1)
 
