@@ -15,6 +15,7 @@ from torch.utils.data import DataLoader, Subset
 import numpy as np
 import random
 from tqdm import tqdm
+import copy
 
 from models.vit_cvm import ViT_ACVM
 from utils.adam_proj import Adam
@@ -139,7 +140,13 @@ def main(cfg):
 
         optimizer = Adam(opt_groups, lr=cfg['lr'])
 
+        model_old = None
         if t > 0:
+            model_old = copy.deepcopy(model)
+            model_old.eval()
+            for p in model_old.parameters():
+                p.requires_grad = False
+
             print(">> [Stage 1] Calculating Drift-Resistant Space (DRS)...")
             model.eval()
             with torch.no_grad():
@@ -164,40 +171,27 @@ def main(cfg):
                 images_aug, labels = images_aug.to(device), labels.to(device)
 
                 emb = model(images_aug)
-                pos = anchors_tensor[labels]
 
-                # K = cfg.get('k_negs', 9)
-                # neg_idx_list = []
-                # for lbl in labels.cpu().numpy():
-                #     choices = [c for c in seen_inds if c != lbl]
-                #     if len(choices) >= K:
-                #         negs = random.sample(choices, k=K)
-                #     else:
-                #         negs = random.choices(choices, k=K) if choices else [lbl] * K
-                #     neg_idx_list.append(negs)
-                #
-                # neg_k_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
-
-                # loss_trip = adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k_tensor, base_margin=cfg['margin'])
-
-                # loss_trip = adaptive_margin_triplet_loss_seen_negs(emb, pos, labels, anchors_tensor, seen_inds,
-                #                                                    base_margin=cfg['margin'])
-                # loss_attr = (1.0 - (emb * pos).sum(dim=1)).mean()
-                # loss = loss_trip + cfg.get('attr_loss_weight', 0.1) * loss_attr
-
-                sims = emb @ anchors_tensor.t()
-                # logits = sims / cfg['temperature']
-                # loss = torch.nn.functional.cross_entropy(logits, labels)
-                min_c, max_c = min(class_inds), max(class_inds)
-                cur_sims = sims[:, min_c: max_c + 1]
-
-                # Map labels về index từ 0 cho hàm CE
+                cur_anchors = anchors_tensor[class_inds]
+                cur_sims = emb @ cur_anchors.t()
+                min_c = min(class_inds)
                 cur_labels = labels - min_c
 
                 logits = cur_sims / cfg['temperature']
                 loss_ce = torch.nn.functional.cross_entropy(logits, cur_labels)
-
                 loss = loss_ce
+
+                if t > 0 and model_old is not None:
+                    with torch.no_grad():
+                        old_emb = model_old(images_aug)
+
+                    old_anchors = anchors_tensor[:min_c]
+
+                    sims_new_old = (emb @ old_anchors.t()) / cfg['temperature']
+                    sims_old_old = (old_emb @ old_anchors.t()) / cfg['temperature']
+
+                    loss_kd = torch.nn.functional.mse_loss(sims_new_old, sims_old_old)
+                    loss += cfg.get('beta_kd', 10.0) * loss_kd
 
                 optimizer.zero_grad()
                 loss.backward()
