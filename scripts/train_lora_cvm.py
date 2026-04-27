@@ -176,7 +176,7 @@ def main(cfg):
 
                 loss_trip = adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k_tensor, base_margin=cfg['margin'])
                 loss_attr = (1.0 - (emb * pos).sum(dim=1)).mean()
-                loss = loss = loss_trip + cfg.get('attr_loss_weight', 0.1) * loss_attr
+                loss = loss_trip + cfg.get('attr_loss_weight', 0.1) * loss_attr
 
                 optimizer.zero_grad()
                 loss.backward()
