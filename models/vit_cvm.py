@@ -88,8 +88,8 @@ class ViT_ACVM(nn.Module):
             if isinstance(module, Attention_LoRA):
                 self.fea_in[module.lora_A_k[task_id].weight] = deepcopy(module.cur_matrix).to(device)
                 self.fea_in[module.lora_A_v[task_id].weight] = deepcopy(module.cur_matrix).to(device)
-                # self.fea_in[module.lora_B_k[task_id].weight] = deepcopy(module.cur_matrix).to(device)
-                # self.fea_in[module.lora_B_v[task_id].weight] = deepcopy(module.cur_matrix).to(device)
+                self.fea_in[module.lora_B_k[task_id].weight] = deepcopy(module.cur_matrix).to(device)
+                self.fea_in[module.lora_B_v[task_id].weight] = deepcopy(module.cur_matrix).to(device)
                 module.cur_matrix.zero_()
                 module.n_cur_matrix = 0
         return self.fea_in

@@ -178,10 +178,15 @@ def main(cfg):
                 # neg_k_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
 
                 # loss_trip = adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k_tensor, base_margin=cfg['margin'])
-                loss_trip = adaptive_margin_triplet_loss_seen_negs(emb, pos, labels, anchors_tensor, seen_inds,
-                                                                   base_margin=cfg['margin'])
-                loss_attr = (1.0 - (emb * pos).sum(dim=1)).mean()
-                loss = loss_trip + cfg.get('attr_loss_weight', 0.1) * loss_attr
+
+                # loss_trip = adaptive_margin_triplet_loss_seen_negs(emb, pos, labels, anchors_tensor, seen_inds,
+                #                                                    base_margin=cfg['margin'])
+                # loss_attr = (1.0 - (emb * pos).sum(dim=1)).mean()
+                # loss = loss_trip + cfg.get('attr_loss_weight', 0.1) * loss_attr
+
+                sims = emb @ anchors_tensor.t()
+                logits = sims / 0.05
+                loss = torch.nn.functional.cross_entropy(logits, labels)
 
                 optimizer.zero_grad()
                 loss.backward()
