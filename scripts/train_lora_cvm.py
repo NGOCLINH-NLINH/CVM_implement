@@ -130,10 +130,10 @@ def main(cfg):
         params_normal = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_B' in n]
 
         opt_groups = [
-            {'params': params_svd, 'svd': True, 'thres': cfg.get('thres', 0.995)},
-            {'params': params_normal, 'svd': False}
+            {'params': params_svd, 'svd': True, 'thres': cfg.get('thres', 0.995), 'weight_decay': cfg.get('weight_decay', 0.0)},
+            {'params': params_normal, 'svd': False, 'weight_decay': cfg.get('weight_decay_normal', 0.0005)}
         ]
-        optimizer = Adam(opt_groups, lr=cfg['lr'], weight_decay=cfg['weight_decay'])
+        optimizer = Adam(opt_groups, lr=cfg['lr'])
 
         if t > 0:
             print(">> [Stage 1] Calculating Drift-Resistant Space (DRS)...")
@@ -150,7 +150,8 @@ def main(cfg):
         print(">> [Stage 2] Training LoRA with Adaptive Triplet Loss...")
         model.train()
         total_steps = cfg['epochs_per_task'] * len(train_loader)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps, eta_min=1e-6)
+        scheduler = (torch.optim.lr_scheduler
+                     .CosineAnnealingLR(optimizer, T_max=total_steps, eta_min=float(cfg.get('eta_min', 1e-6))))
 
         pbar = tqdm(total=total_steps, desc=f"Task {t}", dynamic_ncols=True)
 
@@ -161,7 +162,7 @@ def main(cfg):
                 emb = model(images_aug)
                 pos = anchors_tensor[labels]
 
-                K = 9
+                K = cfg.get('k_negs', 9)
                 neg_idx_list = []
                 for lbl in labels.cpu().numpy():
                     choices = [c for c in seen_inds if c != lbl]
@@ -174,12 +175,12 @@ def main(cfg):
                 neg_k_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
 
                 loss_trip = adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k_tensor, base_margin=cfg['margin'])
-                # loss_attr = (1.0 - (emb * pos).sum(dim=1)).mean()
-                loss = loss_trip
+                loss_attr = (1.0 - (emb * pos).sum(dim=1)).mean()
+                loss = loss = loss_trip + cfg.get('attr_loss_weight', 0.1) * loss_attr
 
                 optimizer.zero_grad()
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=cfg.get('clip_grad', 5.0))
                 optimizer.step()
 
                 scheduler.step()
