@@ -127,14 +127,20 @@ def main(cfg):
         if num_trainable == 0:
             raise ValueError("FATAL: None param is being trained")
 
-        params_svd = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_A' in n]
-        params_normal = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_B' in n]
+        # params_svd = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_A' in n]
+        # params_normal = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_B' in n]
 
+        trainable_params = [p for n, p in model.named_parameters() if p.requires_grad]
         wd_svd = 0.0 if t > 0 else cfg.get('weight_decay_normal', 0.0005)
 
+        # opt_groups = [
+        #     {'params': params_svd, 'svd': True, 'thres': cfg.get('thres', 0.995), 'weight_decay': wd_svd, 'lr': cfg['lr'] * 3.0},
+        #     {'params': params_normal, 'svd': False, 'weight_decay': cfg.get('weight_decay_normal', 0.0005), 'lr': cfg['lr']}
+        # ]
+
         opt_groups = [
-            {'params': params_svd, 'svd': True, 'thres': cfg.get('thres', 0.995), 'weight_decay': wd_svd, 'lr': cfg['lr'] * 3.0},
-            {'params': params_normal, 'svd': False, 'weight_decay': cfg.get('weight_decay_normal', 0.0005), 'lr': cfg['lr']}
+            {'params': trainable_params, 'svd': True, 'thres': cfg.get('thres', 0.995), 'weight_decay': wd_svd,
+             'lr': cfg['lr'] * 3.0}
         ]
         optimizer = Adam(opt_groups, lr=cfg['lr'])
 
