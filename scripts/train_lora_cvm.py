@@ -136,12 +136,12 @@ def main(cfg):
 
         opt_groups = [
             {'params': params_svd, 'svd': True, 'thres': cfg.get('thres', 0.995),
-             'weight_decay': wd_svd, 'lr': cfg['lr'] * 3.0},
+             'weight_decay': wd_svd, 'lr': cfg.get('lr', 0.0005) * cfg.get('multiplier', 1.0)},
             {'params': params_normal, 'svd': False,
              'weight_decay': cfg.get('weight_decay_normal', 0.0005), 'lr': cfg['lr']}
         ]
 
-        optimizer = Adam(opt_groups, lr=cfg['lr'])
+        optimizer = Adam(opt_groups, lr=cfg.get('lr', 0.0005))
 
         if t > 0:
             print(">> [Stage 1] Calculating Drift-Resistant Space (DRS)...")
