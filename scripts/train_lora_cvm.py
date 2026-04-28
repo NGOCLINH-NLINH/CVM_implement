@@ -170,16 +170,22 @@ def main(cfg):
                 emb = model(images_aug)
                 pos = anchors_tensor[labels]
 
-                seen_anchors = anchors_tensor[seen_inds]
-                sims = emb @ seen_anchors.t()
-                label_map = {global_cls: idx for idx, global_cls in enumerate(seen_inds)}
-                mapped_labels = torch.tensor([label_map[l.item()] for l in labels], dtype=torch.long, device=device)
-                logits = sims / cfg.get('temperature', 0.07)
-                loss_ce = torch.nn.functional.cross_entropy(logits, mapped_labels)
+                cur_anchors = anchors_tensor[class_inds]
+                cur_sims = emb @ cur_anchors.t()
+                min_c = min(class_inds)
+                cur_labels = labels - min_c
+
+                logits = cur_sims / cfg.get('temperature', 0.1)
+                loss_ce = torch.nn.functional.cross_entropy(logits, cur_labels)
+                loss = loss_ce
 
                 loss_anc = (1.0 - (emb * pos).sum(dim=1)).mean()
+                loss += cfg.get('lambda_anchor', 1.0) * loss_anc
 
-                loss = loss_ce + cfg.get('lambda_anchor', 1.0) * loss_anc
+                if t > 0:
+                    loss_trip = adaptive_margin_triplet_loss_seen_negs(emb, pos, labels, anchors_tensor, class_inds,
+                                                                       base_margin=cfg['margin'])
+                    loss += loss_trip
 
                 optimizer.zero_grad()
                 loss.backward()
