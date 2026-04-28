@@ -1,10 +1,10 @@
-# scripts/build_anchors.py
 import argparse
 from sentence_transformers import SentenceTransformer
 import pickle
 from pathlib import Path
 from tqdm import tqdm
 from torchvision.datasets import CIFAR100
+import numpy as np
 
 
 def ensure_labels_file(labels_file):
@@ -27,6 +27,15 @@ def build_anchors(labels_file, out_path, model_name='sentence-transformers/all-M
         prompt = f"This is an image of {lbl}"
         vec = model.encode(prompt)
         anchors[lbl] = vec
+
+    mat = np.array(list(anchors.values()))
+    mean_vec = np.mean(mat, axis=0)
+    mat = mat - mean_vec
+    mat = mat / np.linalg.norm(mat, axis=1, keepdims=True)
+
+    for i, lbl in enumerate(anchors.keys()):
+        anchors[lbl] = mat[i]
+
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, 'wb') as f:
         pickle.dump(anchors, f)

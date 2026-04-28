@@ -15,7 +15,6 @@ from torch.utils.data import DataLoader, Subset
 import numpy as np
 import random
 from tqdm import tqdm
-import copy
 
 from models.vit_cvm import ViT_ACVM
 from utils.adam_proj import Adam
@@ -134,19 +133,15 @@ def main(cfg):
         wd_svd = 0.0 if t > 0 else cfg.get('weight_decay_normal', 0.0005)
 
         opt_groups = [
-            {'params': params_svd, 'svd': True, 'thres': cfg.get('thres', 0.995), 'weight_decay': wd_svd, 'lr': cfg['lr'] * 3.0},
-            {'params': params_normal, 'svd': False, 'weight_decay': cfg.get('weight_decay_normal', 0.0005), 'lr': cfg['lr']}
+            {'params': params_svd, 'svd': True, 'thres': cfg.get('thres', 0.995), 'weight_decay': wd_svd,
+             'lr': cfg['lr'] * 3.0},
+            {'params': params_normal, 'svd': False, 'weight_decay': cfg.get('weight_decay_normal', 0.0005),
+             'lr': cfg['lr']}
         ]
 
         optimizer = Adam(opt_groups, lr=cfg['lr'])
 
-        model_old = None
         if t > 0:
-            model_old = copy.deepcopy(model)
-            model_old.eval()
-            for p in model_old.parameters():
-                p.requires_grad = False
-
             print(">> [Stage 1] Calculating Drift-Resistant Space (DRS)...")
             model.eval()
             with torch.no_grad():
@@ -171,6 +166,7 @@ def main(cfg):
                 images_aug, labels = images_aug.to(device), labels.to(device)
 
                 emb = model(images_aug)
+                pos = anchors_tensor[labels]
 
                 cur_anchors = anchors_tensor[class_inds]
                 cur_sims = emb @ cur_anchors.t()
@@ -181,17 +177,10 @@ def main(cfg):
                 loss_ce = torch.nn.functional.cross_entropy(logits, cur_labels)
                 loss = loss_ce
 
-                if t > 0 and model_old is not None:
-                    with torch.no_grad():
-                        old_emb = model_old(images_aug)
-
-                    old_anchors = anchors_tensor[:min_c]
-
-                    sims_new_old = (emb @ old_anchors.t()) / cfg['temperature']
-                    sims_old_old = (old_emb @ old_anchors.t()) / cfg['temperature']
-
-                    loss_kd = torch.nn.functional.mse_loss(sims_new_old, sims_old_old)
-                    loss += cfg.get('beta_kd', 10.0) * loss_kd
+                if t > 0:
+                    loss_trip = adaptive_margin_triplet_loss_seen_negs(emb, pos, labels, anchors_tensor, seen_inds,
+                                                                       base_margin=cfg['margin'])
+                    loss += loss_trip
 
                 optimizer.zero_grad()
                 loss.backward()
