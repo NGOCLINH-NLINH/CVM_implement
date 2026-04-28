@@ -136,9 +136,10 @@ def main(cfg):
 
         opt_groups = [
             {'params': params_svd, 'svd': True, 'thres': cfg.get('thres', 0.995),
-             'weight_decay': wd_svd, 'lr': cfg.get('lr', 0.0005) * cfg.get('multiplier', 1.0)},
+             'weight_decay': wd_svd, 'lr': cfg.get('lr', 0.0005)},
             {'params': params_normal, 'svd': False,
-             'weight_decay': cfg.get('weight_decay_normal', 0.0005), 'lr': cfg['lr']}
+             'weight_decay': cfg.get('weight_decay_normal', 0.0005),
+             'lr': cfg.get('lr', 0.0005) * cfg.get('multiplier', 1.0)}
         ]
 
         optimizer = Adam(opt_groups, lr=cfg.get('lr', 0.0005))
@@ -183,9 +184,9 @@ def main(cfg):
                 loss += cfg.get('lambda_anchor', 1.0) * loss_anc
 
                 if t > 0:
-                    loss_trip = adaptive_margin_triplet_loss_seen_negs(emb, pos, labels, anchors_tensor, class_inds,
+                    loss_trip = adaptive_margin_triplet_loss_seen_negs(emb, pos, labels, anchors_tensor, seen_inds,
                                                                        base_margin=cfg['margin'])
-                    loss += loss_trip
+                    loss += cfg.get('lambda_trip', 1.0) * loss_trip
 
                 optimizer.zero_grad()
                 loss.backward()
