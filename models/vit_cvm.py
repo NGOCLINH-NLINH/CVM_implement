@@ -52,10 +52,11 @@ class ViT_ACVM(nn.Module):
         self.image_encoder = create_vit_small_lora(pretrained=True, **model_kwargs)
         self.num_task = 0
         self.fea_in = defaultdict(dict)
+        self.prototypes = {}
 
-        for name, param in self.named_parameters():
-            if 'lora_B' in name:
-                nn.init.zeros_(param.data)
+        for module in self.modules():
+            if isinstance(module, Attention_LoRA):
+                module.init_param()
 
     def forward(self, x, get_cur_x=False):
         task_id = self.num_task - 1 if self.num_task > 0 else 0
@@ -71,16 +72,10 @@ class ViT_ACVM(nn.Module):
             param.requires_grad_(False)
             task_id = self.num_task - 1
 
-            if f"lora_A_k.{task_id}" in name:
+            if f"lora_A_k.{task_id}" in name or f"lora_A_v.{task_id}" in name:
                 param.requires_grad_(True)
-            elif f"lora_A_v.{task_id}" in name:
+            elif f"lora_B_k.{task_id}" in name or f"lora_B_v.{task_id}" in name:
                 param.requires_grad_(True)
-            elif f"lora_B_k.{task_id}" in name:
-                param.requires_grad_(True)
-                nn.init.zeros_(param.data)
-            elif f"lora_B_v.{task_id}" in name:
-                param.requires_grad_(True)
-                nn.init.zeros_(param.data)
 
     def extract_fea_in(self, device):
         task_id = self.num_task - 1
@@ -93,3 +88,18 @@ class ViT_ACVM(nn.Module):
                 module.cur_matrix.zero_()
                 module.n_cur_matrix = 0
         return self.fea_in
+
+    @torch.no_grad()
+    def build_prototypes(self, train_loader, class_indices, device):
+        self.eval()
+        class_features = {c: [] for c in class_indices}
+        for images_aug, images_raw, labels in train_loader:
+            emb = self(images_raw.to(device))
+            for i, label in enumerate(labels):
+                c = int(label.item())
+                if c in class_features:
+                    class_features[c].append(emb[i].cpu())
+        for c in class_indices:
+            if class_features[c]:
+                proto = torch.stack(class_features[c]).mean(dim=0)
+                self.prototypes[c] = F.normalize(proto, dim=0)

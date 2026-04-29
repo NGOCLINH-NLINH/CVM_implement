@@ -68,12 +68,19 @@ def evaluate_specific_task(model, test_full, eval_indices, seen_indices, anchors
     loader = DataLoader(Subset(test_full, idxs), batch_size=128, shuffle=False, num_workers=2)
 
     model.eval()
-    anchors_seen = anchors_tensor[seen_indices].to(device)
+    # anchors_seen = anchors_tensor[seen_indices].to(device)
+    ref_vectors = []
+    for c in seen_indices:
+        if hasattr(model, 'prototypes') and c in model.prototypes:
+            ref_vectors.append(model.prototypes[c].to(device))
+        else:
+            ref_vectors.append(anchors_tensor[c].to(device))
+    ref_matrix = torch.stack(ref_vectors)
     correct, total = 0, 0
     with torch.no_grad():
         for images, labels in loader:
             emb = model(images.to(device))
-            sims = emb @ anchors_seen.t()
+            sims = emb @ ref_matrix.t()
             preds = sims.argmax(dim=1).cpu().numpy()
 
             global_preds = [seen_indices[p] for p in preds]
@@ -131,13 +138,11 @@ def main(cfg):
         params_normal = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_B' in n]
 
         wd_svd = cfg.get('weight_decay_normal', 0.0005)
-
         opt_groups = [
             {'params': params_svd, 'svd': True, 'thres': cfg.get('thres', 0.995),
              'weight_decay': wd_svd, 'lr': cfg.get('lr', 0.0005)},
             {'params': params_normal, 'svd': False,
-             'weight_decay': wd_svd,
-             'lr': cfg.get('lr', 0.0005) * cfg.get('multiplier', 1.0)}
+             'weight_decay': wd_svd, 'lr': cfg.get('lr', 0.0005)}
         ]
 
         optimizer = Adam(opt_groups, lr=cfg.get('lr', 0.0005))
@@ -169,18 +174,14 @@ def main(cfg):
                 emb = model(images_aug)
                 pos = anchors_tensor[labels]
 
-                # cur_anchors = anchors_tensor[class_inds]
-                # cur_sims = emb @ cur_anchors.t()
-                # min_c = min(class_inds)
-                # cur_labels = labels - min_c
-                #
-                # logits = cur_sims / cfg.get('temperature', 0.07)
-                # loss_ce = torch.nn.functional.cross_entropy(logits, cur_labels)
-                # loss = loss_ce
-                #
-                # loss_anc = (1.0 - (emb * pos).sum(dim=1)).mean()
-                # loss += cfg.get('lambda_anchor', 1.0) * loss_anc
-                loss = torch.nn.functional.mse_loss(emb, pos)
+                cur_anchors = anchors_tensor[class_inds]
+                cur_sims = emb @ cur_anchors.t()
+                min_c = min(class_inds)
+                logits = cur_sims / cfg.get('temperature', 0.07)
+                loss_ce = torch.nn.functional.cross_entropy(logits, labels - min_c)
+
+                loss_anc = (1.0 - (emb * pos).sum(dim=1)).mean()
+                loss = loss_ce + cfg.get('lambda_anchor', 1.0) * loss_anc
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -192,6 +193,10 @@ def main(cfg):
                 pbar.update(1)
                 pbar.set_postfix({"Loss": f"{loss.item():.3f}"})
         pbar.close()
+
+        print(">> Building drift-compensation Prototypes...")
+        model.build_prototypes(train_loader, class_inds, device)
+        model.train()
 
         task_accs = []
         for i in range(t + 1):
