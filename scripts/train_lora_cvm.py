@@ -136,7 +136,7 @@ def main(cfg):
             {'params': params_svd, 'svd': True, 'thres': cfg.get('thres', 0.995),
              'weight_decay': wd_svd, 'lr': cfg.get('lr', 0.0005)},
             {'params': params_normal, 'svd': False,
-             'weight_decay': cfg.get('weight_decay_normal', 0.0005),
+             'weight_decay': wd_svd,
              'lr': cfg.get('lr', 0.0005) * cfg.get('multiplier', 1.0)}
         ]
 
@@ -169,17 +169,18 @@ def main(cfg):
                 emb = model(images_aug)
                 pos = anchors_tensor[labels]
 
-                cur_anchors = anchors_tensor[class_inds]
-                cur_sims = emb @ cur_anchors.t()
-                min_c = min(class_inds)
-                cur_labels = labels - min_c
-
-                logits = cur_sims / cfg.get('temperature', 0.07)
-                loss_ce = torch.nn.functional.cross_entropy(logits, cur_labels)
-                loss = loss_ce
-
-                loss_anc = (1.0 - (emb * pos).sum(dim=1)).mean()
-                loss += cfg.get('lambda_anchor', 1.0) * loss_anc
+                # cur_anchors = anchors_tensor[class_inds]
+                # cur_sims = emb @ cur_anchors.t()
+                # min_c = min(class_inds)
+                # cur_labels = labels - min_c
+                #
+                # logits = cur_sims / cfg.get('temperature', 0.07)
+                # loss_ce = torch.nn.functional.cross_entropy(logits, cur_labels)
+                # loss = loss_ce
+                #
+                # loss_anc = (1.0 - (emb * pos).sum(dim=1)).mean()
+                # loss += cfg.get('lambda_anchor', 1.0) * loss_anc
+                loss = torch.nn.functional.mse_loss(emb, pos)
 
                 optimizer.zero_grad()
                 loss.backward()
