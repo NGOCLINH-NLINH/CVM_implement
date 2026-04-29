@@ -173,15 +173,7 @@ def main(cfg):
 
                 emb = model(images_aug)
                 pos = anchors_tensor[labels]
-
-                cur_anchors = anchors_tensor[class_inds]
-                cur_sims = emb @ cur_anchors.t()
-                min_c = min(class_inds)
-                logits = cur_sims / cfg.get('temperature', 0.07)
-                loss_ce = torch.nn.functional.cross_entropy(logits, labels - min_c)
-
-                loss_anc = (1.0 - (emb * pos).sum(dim=1)).mean()
-                loss = loss_ce + cfg.get('lambda_anchor', 1.0) * loss_anc
+                loss = torch.nn.functional.mse_loss(emb, pos)
 
                 optimizer.zero_grad()
                 loss.backward()
