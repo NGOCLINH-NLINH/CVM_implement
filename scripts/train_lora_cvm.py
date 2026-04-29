@@ -130,7 +130,7 @@ def main(cfg):
         params_svd = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_A' in n]
         params_normal = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_B' in n]
 
-        wd_svd = 0.0 if t == 0 else cfg.get('weight_decay_normal', 0.0005)
+        wd_svd = cfg.get('weight_decay_normal', 0.0005)
 
         opt_groups = [
             {'params': params_svd, 'svd': True, 'thres': cfg.get('thres', 0.995),
@@ -182,7 +182,7 @@ def main(cfg):
                 loss += cfg.get('lambda_anchor', 1.0) * loss_anc
 
                 if t > 0:
-                    loss_trip = adaptive_margin_triplet_loss_seen_negs(emb, pos, labels, anchors_tensor, seen_inds,
+                    loss_trip = adaptive_margin_triplet_loss_seen_negs(emb, pos, labels, anchors_tensor, class_inds,
                                                                        base_margin=cfg['margin'])
                     loss += cfg.get('lambda_trip', 1.0) * loss_trip
 
