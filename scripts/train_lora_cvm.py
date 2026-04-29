@@ -130,9 +130,7 @@ def main(cfg):
         params_svd = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_A' in n]
         params_normal = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_B' in n]
 
-        wd_svd = cfg.get('weight_decay_normal', 0.0005)
-        if t > 0:
-            wd_svd = wd_svd * 10.0
+        wd_svd = 0.0 if t == 0 else cfg.get('weight_decay_normal', 0.0005)
 
         opt_groups = [
             {'params': params_svd, 'svd': True, 'thres': cfg.get('thres', 0.995),
