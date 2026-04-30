@@ -138,11 +138,13 @@ def main(cfg):
         params_normal = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_B' in n]
 
         wd_svd = cfg.get('weight_decay_normal', 0.0005)
+        wd_lora_b = 0.05 if t > 0 else 0.0005
+
         opt_groups = [
             {'params': params_svd, 'svd': True, 'thres': cfg.get('thres', 0.995),
              'weight_decay': wd_svd, 'lr': cfg.get('lr', 0.0005)},
             {'params': params_normal, 'svd': False,
-             'weight_decay': wd_svd, 'lr': cfg.get('lr', 0.0005)}
+             'weight_decay': wd_lora_b, 'lr': cfg.get('lr', 0.0005)}
         ]
 
         optimizer = Adam(opt_groups, lr=cfg.get('lr', 0.0005))
@@ -173,7 +175,15 @@ def main(cfg):
 
                 emb = model(images_aug)
                 pos = anchors_tensor[labels]
-                loss = torch.nn.functional.mse_loss(emb, pos)
+                cur_anchors = anchors_tensor[class_inds]
+                cur_sims = emb @ cur_anchors.t()
+                min_c = min(class_inds)
+
+                logits = cur_sims / cfg.get('temperature', 0.07)
+                loss_ce = torch.nn.functional.cross_entropy(logits, labels - min_c)
+
+                loss_anc = (1.0 - (emb * pos).sum(dim=1)).mean()
+                loss = loss_ce + cfg.get('lambda_anchor', 1.0) * loss_anc
 
                 optimizer.zero_grad()
                 loss.backward()

@@ -76,6 +76,7 @@ class ViT_ACVM(nn.Module):
                 param.requires_grad_(True)
             elif f"lora_B_k.{task_id}" in name or f"lora_B_v.{task_id}" in name:
                 param.requires_grad_(True)
+                nn.init.zeros_(param.data)
 
     def extract_fea_in(self, device):
         task_id = self.num_task - 1
