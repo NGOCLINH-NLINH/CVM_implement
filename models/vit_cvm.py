@@ -76,7 +76,7 @@ class ViT_ACVM(nn.Module):
                 param.requires_grad_(True)
             elif f"lora_B_k.{task_id}" in name or f"lora_B_v.{task_id}" in name:
                 param.requires_grad_(True)
-                nn.init.zeros_(param.data)
+                # nn.init.zeros_(param.data)
 
     def extract_fea_in(self, device):
         task_id = self.num_task - 1
@@ -84,8 +84,8 @@ class ViT_ACVM(nn.Module):
             if isinstance(module, Attention_LoRA):
                 self.fea_in[module.lora_A_k[task_id].weight] = deepcopy(module.cur_matrix).to(device)
                 self.fea_in[module.lora_A_v[task_id].weight] = deepcopy(module.cur_matrix).to(device)
-                self.fea_in[module.lora_B_k[task_id].weight] = deepcopy(module.cur_matrix).to(device)
-                self.fea_in[module.lora_B_v[task_id].weight] = deepcopy(module.cur_matrix).to(device)
+                # self.fea_in[module.lora_B_k[task_id].weight] = deepcopy(module.cur_matrix).to(device)
+                # self.fea_in[module.lora_B_v[task_id].weight] = deepcopy(module.cur_matrix).to(device)
                 module.cur_matrix.zero_()
                 module.n_cur_matrix = 0
         return self.fea_in

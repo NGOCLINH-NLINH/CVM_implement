@@ -31,10 +31,12 @@ def build_anchors(labels_file, out_path, model_name='sentence-transformers/all-M
     mat = np.array(list(anchors.values()))
     mean_vec = np.mean(mat, axis=0)
     mat = mat - mean_vec
-    mat = mat / np.linalg.norm(mat, axis=1, keepdims=True)
+
+    U, S, Vh = np.linalg.svd(mat, full_matrices=False)
+    mat_ortho = U @ Vh
 
     for i, lbl in enumerate(anchors.keys()):
-        anchors[lbl] = mat[i]
+        anchors[lbl] = mat_ortho[i]
 
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, 'wb') as f:
