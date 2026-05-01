@@ -222,7 +222,7 @@ def main(cfg):
                 else:
                     old_anchor_mat = None
 
-                Lm = uncertainty_aware_margin_loss(mu, log_var, labels_cuda, anchors_tensor, cur_inds,
+                Lm = uncertainty_aware_margin_loss(mu, log_var, labels_cuda, anchors_tensor, seen_inds,
                                                    margin=cfg['margin'])
 
                 if cfg['spread_lambda'] > 0:
