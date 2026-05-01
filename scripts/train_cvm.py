@@ -288,9 +288,9 @@ def main(cfg):
         seen_acc_history.append(acc_all_seen)
         print(f"Acc on all seen classes after task {t}: {acc_all_seen:.4f}")
 
-        lp_acc = linear_probe_all(model, train_full, test_full, seen_inds, device, cfg['out_dim'])
-        linear_probe_history.append(lp_acc)
-        print(f"Linear probe acc on seen classes after task {t}: {lp_acc:.4f}")
+        # lp_acc = linear_probe_all(model, train_full, test_full, seen_inds, device, cfg['out_dim'])
+        # linear_probe_history.append(lp_acc)
+        # print(f"Linear probe acc on seen classes after task {t}: {lp_acc:.4f}")
 
         unseen_inds = [i for i in range(len(anchor_keys)) if i not in seen_inds]
         zs = zero_shot_eval(model, anchors_tensor, unseen_inds, test_full, device)
@@ -305,6 +305,7 @@ def main(cfg):
                 acc_old_task = evaluate_task_full_anchors(model, test_full, t_classes, anchors_tensor, anchor_keys,
                                                           device)
                 per_task_accs.append(acc_old_task)
+                print(f"  -> Accuracy on Task {i_task}: {acc_old_task:.4f}")
         eval_history.append(per_task_accs)
 
     fw_score, _ = compute_forgetting(eval_history)
