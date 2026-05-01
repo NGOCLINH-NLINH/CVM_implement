@@ -242,3 +242,38 @@ def adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k, base_margin=0.1, reduct
         return loss.sum()
     else:
         return loss
+
+
+def uncertainty_aware_margin_loss(mu, log_var, labels, anchors_tensor, seen_indices, margin=0.1):
+    device = mu.device
+
+    pos_anchors = anchors_tensor[labels].to(device)
+    anchors_seen = anchors_tensor[seen_indices].to(device)
+
+    var = torch.exp(log_var) + 1e-6
+
+    sq_diff = (mu - pos_anchors) ** 2
+    nll_loss = (sq_diff / var) + log_var
+    nll_loss = 0.5 * nll_loss.sum(dim=1).mean()
+
+    cos_pos = (mu * pos_anchors).sum(dim=1)
+    d_pos = 1.0 - cos_pos
+
+    cos_seen = mu @ anchors_seen.t()
+    d_seen = 1.0 - cos_seen
+
+    loss_mat = torch.clamp(d_pos.unsqueeze(1) - d_seen + margin, min=0.0)
+
+    seen_indices_tensor = torch.tensor(seen_indices, device=device).unsqueeze(0)
+    mask = (seen_indices_tensor == labels.unsqueeze(1))
+    loss_mat[mask] = 0.0
+
+    num_negs = anchors_seen.size(0) - 1
+    if num_negs > 0:
+        triplet_loss = loss_mat.sum() / (mu.size(0) * num_negs)
+    else:
+        triplet_loss = torch.tensor(0.0, device=device)
+
+    total_loss = nll_loss + triplet_loss
+
+    return total_loss

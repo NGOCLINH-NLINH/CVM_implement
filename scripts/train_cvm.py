@@ -19,10 +19,10 @@ import numpy as np
 import random
 from tqdm import tqdm
 
-from models.resnet_cvm import ResNetCVM
+from models.resnet_cvm import ProbabilisticResNetCVM
 from utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, \
     set_seed, triplet_loss_k_negs, triplet_loss_seen_negs, anchor_attraction_loss, image_side_prototype_spread_loss, \
-    adaptive_margin_triplet_loss_k_negs
+    adaptive_margin_triplet_loss_k_negs, uncertainty_aware_margin_loss
 
 replay_transform = transforms.Compose([
     transforms.RandomCrop(32, padding=4),
@@ -43,7 +43,7 @@ def evaluate_all_seen(model, test_full, seen_indices, anchors_tensor, anchor_key
     with torch.no_grad():
         for images, labels in loader:
             images = images.to(device)
-            emb = model(images)
+            emb, _ = model(images)
             sims = emb @ anchors_seen.t()
             preds = sims.argmax(dim=1).cpu().numpy()
             global_preds = [seen_indices[p] for p in preds]
@@ -67,7 +67,7 @@ def evaluate_task_full_anchors(model, test_full, task_class_inds, anchors_tensor
             images = images.to(device)
             labels = labels.to(device)
 
-            emb = model(images)
+            emb, _ = model(images)
             sims = emb @ anchors.t()
             preds = sims.argmax(dim=1)
 
@@ -87,7 +87,7 @@ def zero_shot_eval(model, anchors_tensor, unseen_indices, test_full, device):
     with torch.no_grad():
         for images, labels in loader:
             images = images.to(device)
-            emb = model(images)
+            emb, _ = model(images)
             sims = emb @ anchors_unseen.t()
             preds = sims.argmax(dim=1).cpu().numpy()
             global_preds = [unseen_indices[p] for p in preds]
@@ -99,7 +99,6 @@ def zero_shot_eval(model, anchors_tensor, unseen_indices, test_full, device):
 
 def linear_probe_all(model, train_full, test_full, seen_indices, device, out_dim):
     model.eval()
-
     train_idx = [i for i, (_, l) in enumerate(train_full) if l in seen_indices]
     test_idx = [i for i, (_, l) in enumerate(test_full) if l in seen_indices]
 
@@ -112,17 +111,16 @@ def linear_probe_all(model, train_full, test_full, seen_indices, device, out_dim
     X_tr, y_tr = [], []
     X_te, y_te = [], []
 
-    # Extract features
     with torch.no_grad():
         for images, labels in loader_tr:
             images = images.to(device)
-            feats = model(images).cpu().numpy()
-            X_tr.append(feats)
+            feats, _ = model(images)
+            X_tr.append(feats.cpu().numpy())
             y_tr.append(labels.numpy())
         for images, labels in loader_te:
             images = images.to(device)
-            feats = model(images).cpu().numpy()
-            X_te.append(feats)
+            feats, _ = model(images)
+            X_te.append(feats.cpu().numpy())
             y_te.append(labels.numpy())
 
     X_tr = np.concatenate(X_tr, axis=0)
@@ -163,7 +161,6 @@ def main(cfg):
     print(f"DEVICE: {device}")
     print(f"{'=' * 50}\n")
 
-    # tasks
     tasks, class_names = make_cifar100_tasks(cfg['num_tasks'], cfg['batch_size'], augment=True)
     train_full = datasets.CIFAR100(root="data", train=True, download=True, transform=transforms.Compose([
         transforms.RandomCrop(32, padding=4),
@@ -183,8 +180,7 @@ def main(cfg):
     anchor_keys, anchors_tensor = load_anchors(cfg['anchors_path'], device=device)
     print("Loaded anchors:", len(anchor_keys))
 
-    # model
-    model = ResNetCVM(out_dim=cfg['out_dim'], pretrained=cfg.get('pretrained_backbone', False)).to(device)
+    model = ProbabilisticResNetCVM(out_dim=cfg['out_dim'], pretrained=cfg.get('pretrained_backbone', False)).to(device)
     prev_model = None
 
     buffer = ReservoirBuffer(capacity=cfg['memory_size'])
@@ -218,117 +214,59 @@ def main(cfg):
             for images, raw_images, labels in train_loader:
                 images_cuda = images.to(device)
                 labels_cuda = labels.to(device)
-                emb = model(images_cuda)
+
+                mu, log_var = model(images_cuda)
 
                 if prev_model is not None and len(old_inds) > 0:
                     old_anchor_mat = anchors_tensor[old_inds].to(device)
                 else:
                     old_anchor_mat = None
 
-                pos = anchors_tensor[labels_cuda].to(device)
+                Lm = uncertainty_aware_margin_loss(mu, log_var, labels_cuda, anchors_tensor, cur_inds,
+                                                   margin=cfg['margin'])
 
-                if cfg.get('original_cvm', False):
-                    neg_idx_list = []
-                    for lbl in labels.numpy():
-                        choices = [c for c in cur_inds if c != lbl]
-                        neg_idx = random.choice(choices) if len(choices) > 0 else lbl
-                        neg_idx_list.append(neg_idx)
-
-                    neg_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
-                    Lm = triplet_loss_emb(emb, pos, neg_tensor, margin=cfg['margin'])
-
-                    if old_anchor_mat is not None and cfg['beta'] > 0:
-                        with torch.no_grad():
-                            emb_prev = prev_model(images_cuda)
-                        Ld = semantic_distance_loss(emb, emb_prev, old_anchor_mat)
-                    else:
-                        Ld = torch.tensor(0.0, device=device)
-
-                    loss = Lm + cfg['beta'] * Ld
-
-                    if t > 0 and len(buffer) > 0 and cfg['replay_batch'] > 0 and cfg.get('replay_on', True):
-                        buf_imgs_raw, buf_labels_cpu = buffer.sample(cfg['replay_batch'])
-                        if buf_imgs_raw is not None:
-                            buf_imgs_raw = buf_imgs_raw.to(device)
-                            buf_labels = buf_labels_cpu.to(device)
-                            buf_imgs_aug = replay_transform(buf_imgs_raw)
-                            emb_buf = model(buf_imgs_aug)
-                            pos_buf = anchors_tensor[buf_labels].to(device)
-
-                            neg_idx_list_buf = []
-                            for lbl in buf_labels_cpu.numpy():
-                                choices = [c for c in seen_inds if c != lbl]
-                                neg_idx = random.choice(choices) if len(choices) > 0 else lbl
-                                neg_idx_list_buf.append(neg_idx)
-
-                            neg_tensor_buf = anchors_tensor[
-                                torch.tensor(neg_idx_list_buf, dtype=torch.long, device=device)]
-                            Lm_buf = triplet_loss_emb(emb_buf, pos_buf, neg_tensor_buf, margin=cfg['margin'])
-
-                            Ld_buf = torch.tensor(0.0, device=device)
-                            if old_anchor_mat is not None and cfg['beta'] > 0:
-                                with torch.no_grad(): emb_prev_buf = prev_model(buf_imgs_aug)
-                                Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
-
-                            loss += cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf)
-
+                if cfg['spread_lambda'] > 0:
+                    L_spread = image_side_prototype_spread_loss(mu, labels_cuda, anchors_tensor, seen_inds,
+                                                                delta=cfg['spread_delta'])
                 else:
-                    neg_idx_list = []
-                    for lbl in labels.numpy():
-                        choices = [c for c in cur_inds if c != lbl]
-                        if len(choices) >= K:
-                            negs = random.sample(choices, k=K)
+                    L_spread = torch.tensor(0.0, device=device)
+
+                if old_anchor_mat is not None and cfg['beta'] > 0:
+                    with torch.no_grad():
+                        mu_prev, _ = prev_model(images_cuda)
+                    Ld = semantic_distance_loss(mu, mu_prev, old_anchor_mat)
+                else:
+                    Ld = torch.tensor(0.0, device=device)
+
+                loss = Lm + cfg['beta'] * Ld + cfg['spread_lambda'] * L_spread
+
+                if t > 0 and len(buffer) > 0 and cfg['replay_batch'] > 0 and cfg.get('replay_on', True):
+                    buf_imgs_raw, buf_labels = buffer.sample(cfg['replay_batch'])
+                    if buf_imgs_raw is not None:
+                        buf_imgs_raw = buf_imgs_raw.to(device)
+                        buf_labels = buf_labels.to(device)
+                        buf_imgs_aug = replay_transform(buf_imgs_raw)
+
+                        mu_buf, log_var_buf = model(buf_imgs_aug)
+
+                        Lm_buf = uncertainty_aware_margin_loss(mu_buf, log_var_buf, buf_labels, anchors_tensor,
+                                                               seen_inds,
+                                                               margin=cfg['margin'])
+
+                        if cfg['spread_lambda'] > 0:
+                            L_spread_buf = image_side_prototype_spread_loss(mu_buf, buf_labels, anchors_tensor,
+                                                                            seen_inds, delta=cfg['spread_delta'])
                         else:
-                            negs = random.choices(choices, k=K)
-                        neg_idx_list.append(negs)
-                    neg_k_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
+                            L_spread_buf = torch.tensor(0.0, device=device)
 
-                    if cfg['adaptive_margin']:
-                        Lm = adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k_tensor, base_margin=cfg['margin'])
-                    else:
-                        Lm = triplet_loss_k_negs(emb, pos, neg_k_tensor, margin=cfg['margin'])
+                        Ld_buf = torch.tensor(0.0, device=device)
+                        if old_anchor_mat is not None and cfg['beta'] > 0:
+                            with torch.no_grad():
+                                mu_prev_buf, _ = prev_model(buf_imgs_aug)
+                            Ld_buf = semantic_distance_loss(mu_buf, mu_prev_buf, old_anchor_mat)
 
-                    if cfg['spread_lambda'] > 0:
-                        L_spread = image_side_prototype_spread_loss(emb, labels_cuda, anchors_tensor, seen_inds,
-                                                                    delta=cfg['spread_delta'])
-                    else:
-                        L_spread = torch.tensor(0.0, device=device)
-
-                    if old_anchor_mat is not None and cfg['beta'] > 0:
-                        with torch.no_grad():
-                            emb_prev = prev_model(images_cuda)
-                        Ld = semantic_distance_loss(emb, emb_prev, old_anchor_mat)
-                    else:
-                        Ld = torch.tensor(0.0, device=device)
-
-                    loss = Lm + cfg['beta'] * Ld + cfg['spread_lambda'] * L_spread
-
-                    if t > 0 and len(buffer) > 0 and cfg['replay_batch'] > 0 and cfg['replay_on']:
-                        buf_imgs_raw, buf_labels = buffer.sample(cfg['replay_batch'])
-                        if buf_imgs_raw is not None:
-                            buf_imgs_raw = buf_imgs_raw.to(device)
-                            buf_labels = buf_labels.to(device)
-                            buf_imgs_aug = replay_transform(buf_imgs_raw)
-                            emb_buf = model(buf_imgs_aug)
-                            pos_buf = anchors_tensor[buf_labels].to(device)
-
-                            Lm_buf = triplet_loss_seen_negs(emb_buf, pos_buf, buf_labels, anchors_tensor, seen_inds,
-                                                            margin=cfg['margin'])
-
-                            if cfg['spread_lambda'] > 0:
-                                L_spread_buf = image_side_prototype_spread_loss(emb_buf, buf_labels, anchors_tensor,
-                                                                                seen_inds, delta=cfg['spread_delta'])
-                            else:
-                                L_spread_buf = torch.tensor(0.0, device=device)
-
-                            Ld_buf = torch.tensor(0.0, device=device)
-                            if old_anchor_mat is not None and cfg['beta'] > 0:
-                                with torch.no_grad():
-                                    emb_prev_buf = prev_model(buf_imgs_aug)
-                                Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
-
-                            loss += cfg['replay_lambda'] * (
-                                        Lm_buf + cfg['beta'] * Ld_buf + cfg['spread_lambda'] * L_spread_buf)
+                        loss += cfg['replay_lambda'] * (
+                                Lm_buf + cfg['beta'] * Ld_buf + cfg['spread_lambda'] * L_spread_buf)
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -405,51 +343,17 @@ def main(cfg):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='configs/cifar100_config.yaml')
-    parser.add_argument('--exp-name', type=str, default='default')
-    parser.add_argument('--seed', type=int, default=None)
-    parser.add_argument('--anchors-path', type=str, default=None)
-    parser.add_argument('--beta', type=float, default=None)
-    parser.add_argument('--spread-lambda', type=float, default=None)
-    parser.add_argument('--margin', type=float, default=None)
-    parser.add_argument('--memory-size', type=int, default=None)
-    parser.add_argument('--no-adaptive', action='store_true')
-    parser.add_argument('--original-cvm', action='store_true', help='Use original CVM paper logic')
+    import argparse
+    import yaml
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', type=str, required=True, help="Path to config YAML")
     args = parser.parse_args()
 
-    # Load YAML
-    with open(args.config) as f:
+    with open(args.config, 'r') as f:
         cfg = yaml.safe_load(f)
 
-    cfg['exp_name'] = args.exp_name
-
-    if args.seed is not None: cfg['seed'] = args.seed
-    if args.anchors_path: cfg['anchors_path'] = args.anchors_path
-
-    if args.beta is not None: cfg['beta'] = args.beta
-    if args.spread_lambda is not None: cfg['spread_lambda'] = args.spread_lambda
-    if args.margin is not None: cfg['margin'] = args.margin
-    if args.memory_size is not None: cfg['memory_size'] = args.memory_size
-
-    if args.no_adaptive:
-        cfg['adaptive_margin'] = False
-    else:
-        cfg.setdefault('adaptive_margin', True)
-
-    cfg['lr'] = float(cfg['lr'])
-    cfg['momentum'] = float(cfg['momentum'])
-    cfg['weight_decay'] = float(cfg['weight_decay'])
-    cfg['batch_size'] = int(cfg['batch_size'])
-
-    cfg['margin'] = float(cfg['margin'])
-    cfg['beta'] = float(cfg['beta'])
-    cfg['spread_lambda'] = float(cfg['spread_lambda'])
-    cfg['spread_delta'] = float(cfg['spread_delta'])
-    cfg['replay_lambda'] = float(cfg['replay_lambda'])
-    cfg['original_cvm'] = args.original_cvm
-
-    mode_name = "ORIGINAL CVM" if cfg['original_cvm'] else "ACVM"
+    mode_name = "ORIGINAL CVM" if cfg.get('original_cvm', False) else "PROBABILISTIC ACVM"
     print(f"\nSTARTING EXPERIMENT MODE: {mode_name}")
+
     main(cfg)
