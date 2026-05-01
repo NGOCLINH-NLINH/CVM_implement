@@ -48,5 +48,6 @@ class ProbabilisticResNetCVM(nn.Module):
         mu = F.normalize(mu, p=2, dim=1)
 
         log_var = self.fc_var(x)
+        log_var = torch.clamp(log_var, min=-4.0, max=10.0)
 
         return mu, log_var

@@ -253,7 +253,7 @@ def uncertainty_aware_margin_loss(mu, log_var, labels, anchors_tensor, seen_indi
     var = torch.exp(log_var) + 1e-6
 
     sq_diff = (mu - pos_anchors) ** 2
-    nll_loss = (sq_diff / var) + log_var
+    nll_loss = (sq_diff / var.detach()) + log_var
     nll_loss = 0.5 * nll_loss.sum(dim=1).mean()
 
     cos_pos = (mu * pos_anchors).sum(dim=1)
