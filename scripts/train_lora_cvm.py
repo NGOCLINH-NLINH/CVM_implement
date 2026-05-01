@@ -61,6 +61,31 @@ def zero_shot_eval(model, anchors_tensor, unseen_indices, test_full, device):
     return correct / total if total > 0 else 0.0
 
 
+def zero_shot2_eval(model, anchors_tensor, unseen_indices, test_full, device):
+    if len(unseen_indices) == 0:
+        return 0.0
+
+    unseen_loader = DataLoader(
+        Subset(test_full, [i for i, (_, l) in enumerate(test_full) if l in unseen_indices]),
+        batch_size=128, shuffle=False, num_workers=2
+    )
+
+    correct, total = 0, 0
+    model.eval()
+
+    with torch.no_grad():
+        for images, labels in unseen_loader:
+            emb = model(images.to(device))
+            sims = emb @ anchors_tensor.t()
+
+            global_preds = sims.argmax(dim=1).cpu().numpy()
+            true_labels = labels.numpy()
+            correct += (global_preds == true_labels).sum()
+            total += len(true_labels)
+
+    return correct / total if total > 0 else 0.0
+
+
 def evaluate_specific_task(model, test_full, eval_indices, seen_indices, anchors_tensor, device):
     idxs = [i for i, (_, lbl) in enumerate(test_full) if lbl in eval_indices]
     if len(idxs) == 0:
@@ -212,7 +237,7 @@ def main(cfg):
         print(f"[*] Average Accuracy on all SEEN tasks: {acc_all_seen:.4f}")
 
         unseen_inds = [i for i in range(len(anchor_keys)) if i not in seen_inds]
-        zs = zero_shot_eval(model, anchors_tensor, unseen_inds, test_full, device)
+        zs = zero_shot2_eval(model, anchors_tensor, unseen_inds, test_full, device)
         zero_shot_history.append(zs)
         print(f"[*] Zero-shot accuracy on UNSEEN classes: {zs:.4f}")
 
