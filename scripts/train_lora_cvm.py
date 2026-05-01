@@ -197,27 +197,18 @@ def main(cfg):
             for images_aug, _, labels in train_loader:
                 images_aug, labels = images_aug.to(device), labels.to(device)
 
-                # with torch.no_grad():
-                #     base_cls = model.image_encoder(images_aug, task=-1)
-                #     base_emb = torch.nn.functional.normalize(base_cls, p=2, dim=1)
+                with torch.no_grad():
+                    base_cls = model.image_encoder(images_aug, task=-1)
+                    base_emb = torch.nn.functional.normalize(base_cls, p=2, dim=1)
 
                 emb = model(images_aug)
                 pos = anchors_tensor[labels]
                 loss_anc = (1.0 - (emb * pos).sum(dim=1)).mean()
 
-                loss = loss_anc
-                if t > 0:
-                    past_classes = seen_inds[:-len(class_inds)]
-                    past_anchors = anchors_tensor[past_classes]
-                    sim_to_past = emb @ past_anchors.t()
-                    margin = cfg.get('margin', 0.1)
-                    loss_rep = torch.nn.functional.relu(sim_to_past - margin).mean()
-                    loss += cfg.get('lambda_rep', 2.0) * loss_rep
+                loss_kd = (1.0 - (emb * base_emb).sum(dim=1)).mean()
 
-                # loss_kd = (1.0 - (emb * base_emb).sum(dim=1)).mean()
-
-                # alpha_kd = cfg.get('lambda_kd', 2.0)
-                # loss = loss_anc + alpha_kd * loss_kd
+                alpha_kd = cfg.get('lambda_kd', 2.0)
+                loss = loss_anc + alpha_kd * loss_kd
 
                 optimizer.zero_grad()
                 loss.backward()
