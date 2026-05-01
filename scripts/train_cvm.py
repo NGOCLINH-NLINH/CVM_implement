@@ -19,7 +19,7 @@ import numpy as np
 import random
 from tqdm import tqdm
 
-from models.resnet_cvm import ProbabilisticResNetCVM
+from models.resnet_cvm import ProbabilisticResNetCVM, freeze_batch_norm
 from utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, \
     set_seed, triplet_loss_k_negs, triplet_loss_seen_negs, anchor_attraction_loss, image_side_prototype_spread_loss, \
     adaptive_margin_triplet_loss_k_negs, uncertainty_aware_margin_loss
@@ -210,6 +210,9 @@ def main(cfg):
         for epoch in range(cfg['epochs_per_task']):
             model.train()
             K = 9
+
+            if t > 0:
+                model.apply(freeze_batch_norm)
 
             for images, raw_images, labels in train_loader:
                 images_cuda = images.to(device)
