@@ -244,32 +244,39 @@ def adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k, base_margin=0.1, reduct
         return loss
 
 
-def uncertainty_aware_margin_loss(mu, log_var, labels, anchors_tensor, seen_inds, margin=0.1):
-    batch_size = mu.size(0)
-    device = mu.device
+def standard_margin_loss(mu, labels, anchors_tensor, seen_inds, margin=0.5):
     pos_anchors = anchors_tensor[labels]
+    L_pull = torch.mean(torch.sum((mu - pos_anchors) ** 2, dim=1))
 
-    pos_dist = torch.sum((mu - pos_anchors) ** 2, dim=1)
-    seen_anchors = anchors_tensor[seen_inds]
-    all_dists = 2.0 - 2.0 * torch.matmul(mu, seen_anchors.t())
+    L_push = torch.tensor(0.0, device=mu.device)
+    if len(seen_inds) > 1:
+        seen_anchors = anchors_tensor[seen_inds]
 
-    mask = torch.ones_like(all_dists, dtype=torch.bool)
-    for i in range(batch_size):
-        idx = (torch.tensor(seen_inds, device=device) == labels[i]).nonzero(as_tuple=True)[0]
-        if len(idx) > 0:
-            mask[i, idx[0]] = False
+        dists = torch.cdist(mu, seen_anchors, p=2.0)
 
-    masked_dists = all_dists.masked_fill(~mask, float('inf'))
-    neg_dist, _ = torch.min(masked_dists, dim=1)
+        mask = torch.ones_like(dists, dtype=torch.bool)
+        for i, lbl in enumerate(labels):
+            idx = (torch.tensor(seen_inds, device=mu.device) == lbl).nonzero(as_tuple=True)[0]
+            if len(idx) > 0:
+                mask[i, idx[0]] = False
 
-    L_margin = torch.clamp(pos_dist - neg_dist + margin, min=0.0).mean()
+        neg_dists = dists[mask]
 
+        if len(neg_dists) > 0:
+            L_push = torch.mean(torch.clamp(margin - neg_dists, min=0.0))
+
+    return L_pull + L_push
+
+
+def kl_divergence_loss(mu, log_var, mu_prev, log_var_prev):
     var = torch.exp(log_var) + 1e-6
-    var_mean = var.mean(dim=1)
-    log_var_mean = log_var.mean(dim=1)
-    L_nll = (pos_dist.detach() / var_mean) + log_var_mean
-    L_nll = L_nll.mean()
+    var_prev = torch.exp(log_var_prev) + 1e-6
+    term1 = log_var - log_var_prev
+    term2 = (var_prev + (mu_prev - mu) ** 2) / var
+    kl_div = 0.5 * torch.sum(term1 + term2 - 1.0, dim=1)
 
-    total_loss = L_margin + 0.1 * L_nll
+    return kl_div.mean()
 
-    return total_loss
+
+def variance_regularization_loss(log_var, target_val=0.0):
+    return torch.mean((log_var - target_val)**2)

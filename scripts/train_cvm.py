@@ -22,7 +22,7 @@ from tqdm import tqdm
 from models.resnet_cvm import ProbabilisticResNetCVM
 from utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, \
     set_seed, triplet_loss_k_negs, triplet_loss_seen_negs, anchor_attraction_loss, image_side_prototype_spread_loss, \
-    adaptive_margin_triplet_loss_k_negs, uncertainty_aware_margin_loss
+    adaptive_margin_triplet_loss_k_negs, standard_margin_loss, kl_divergence_loss, variance_regularization_loss
 
 replay_transform = transforms.Compose([
     transforms.RandomCrop(32, padding=4),
@@ -216,14 +216,10 @@ def main(cfg):
                 labels_cuda = labels.to(device)
 
                 mu, log_var = model(images_cuda)
+                Lm = standard_margin_loss(mu, labels_cuda, anchors_tensor, seen_inds, margin=cfg['margin'])
 
-                if prev_model is not None and len(old_inds) > 0:
-                    old_anchor_mat = anchors_tensor[old_inds].to(device)
-                else:
-                    old_anchor_mat = None
-
-                Lm = uncertainty_aware_margin_loss(mu, log_var, labels_cuda, anchors_tensor, seen_inds,
-                                                   margin=cfg['margin'])
+                gamma = cfg.get('gamma', 0.1)
+                L_var_reg = variance_regularization_loss(log_var, target_val=0.0)
 
                 if cfg['spread_lambda'] > 0:
                     L_spread = image_side_prototype_spread_loss(mu, labels_cuda, anchors_tensor, seen_inds,
@@ -231,14 +227,7 @@ def main(cfg):
                 else:
                     L_spread = torch.tensor(0.0, device=device)
 
-                if old_anchor_mat is not None and cfg['beta'] > 0:
-                    with torch.no_grad():
-                        mu_prev, _ = prev_model(images_cuda)
-                    Ld = semantic_distance_loss(mu, mu_prev, old_anchor_mat)
-                else:
-                    Ld = torch.tensor(0.0, device=device)
-
-                loss = Lm + cfg['beta'] * Ld + cfg['spread_lambda'] * L_spread
+                loss = Lm + cfg['spread_lambda'] * L_spread + gamma * L_var_reg
 
                 if t > 0 and len(buffer) > 0 and cfg['replay_batch'] > 0 and cfg.get('replay_on', True):
                     buf_imgs_raw, buf_labels = buffer.sample(cfg['replay_batch'])
@@ -249,9 +238,9 @@ def main(cfg):
 
                         mu_buf, log_var_buf = model(buf_imgs_aug)
 
-                        Lm_buf = uncertainty_aware_margin_loss(mu_buf, log_var_buf, buf_labels, anchors_tensor,
-                                                               seen_inds,
-                                                               margin=cfg['margin'])
+                        Lm_buf = standard_margin_loss(mu_buf, buf_labels, anchors_tensor, seen_inds,
+                                                      margin=cfg['margin'])
+                        L_var_reg_buf = variance_regularization_loss(log_var_buf, target_val=0.0)
 
                         if cfg['spread_lambda'] > 0:
                             L_spread_buf = image_side_prototype_spread_loss(mu_buf, buf_labels, anchors_tensor,
@@ -259,14 +248,15 @@ def main(cfg):
                         else:
                             L_spread_buf = torch.tensor(0.0, device=device)
 
-                        Ld_buf = torch.tensor(0.0, device=device)
-                        if old_anchor_mat is not None and cfg['beta'] > 0:
+                        L_kl = torch.tensor(0.0, device=device)
+                        if prev_model is not None and cfg['beta'] > 0:
                             with torch.no_grad():
-                                mu_prev_buf, _ = prev_model(buf_imgs_aug)
-                            Ld_buf = semantic_distance_loss(mu_buf, mu_prev_buf, old_anchor_mat)
+                                mu_prev_buf, log_var_prev_buf = prev_model(buf_imgs_aug)
 
-                        loss += cfg['replay_lambda'] * (
-                                Lm_buf + cfg['beta'] * Ld_buf + cfg['spread_lambda'] * L_spread_buf)
+                            L_kl = kl_divergence_loss(mu_buf, log_var_buf, mu_prev_buf, log_var_prev_buf)
+
+                        loss += cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * L_kl + cfg[
+                            'spread_lambda'] * L_spread_buf + gamma * L_var_reg_buf)
 
                 optimizer.zero_grad()
                 loss.backward()

@@ -37,7 +37,7 @@ class ProbabilisticResNetCVM(nn.Module):
         nn.init.zeros_(self.fc_mu.bias)
 
         nn.init.constant_(self.fc_var.weight, 0.0001)
-        nn.init.constant_(self.fc_var.bias, -4.0)
+        nn.init.constant_(self.fc_var.bias, 0.0)
 
     def forward(self, x):
         x = self.features(x)
