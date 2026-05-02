@@ -182,7 +182,8 @@ def main(cfg):
     anchor_keys, anchors_tensor = load_anchors(cfg['anchors_path'], device=device)
     print("Loaded anchors:", len(anchor_keys))
 
-    model = create_lora_cvm_model(out_dim=cfg['out_dim'], pretrained=cfg.get('pretrained_backbone', True), lora_rank=16).to(device)
+    model = create_lora_cvm_model(out_dim=cfg['out_dim'], pretrained=cfg.get('pretrained_backbone', True),
+                                  lora_rank=cfg.get('lora_rank', 16)).to(device)
     prev_model = None
 
     buffer = ReservoirBuffer(capacity=cfg['memory_size'])
