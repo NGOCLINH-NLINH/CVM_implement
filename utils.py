@@ -244,36 +244,32 @@ def adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k, base_margin=0.1, reduct
         return loss
 
 
-def uncertainty_aware_margin_loss(mu, log_var, labels, anchors_tensor, seen_indices, margin=0.1):
+def uncertainty_aware_margin_loss(mu, log_var, labels, anchors_tensor, seen_inds, margin=0.1):
+    batch_size = mu.size(0)
     device = mu.device
+    pos_anchors = anchors_tensor[labels]
 
-    pos_anchors = anchors_tensor[labels].to(device)
-    anchors_seen = anchors_tensor[seen_indices].to(device)
+    pos_dist = torch.sum((mu - pos_anchors) ** 2, dim=1)
+    seen_anchors = anchors_tensor[seen_inds]
+    all_dists = 2.0 - 2.0 * torch.matmul(mu, seen_anchors.t())
+
+    mask = torch.ones_like(all_dists, dtype=torch.bool)
+    for i in range(batch_size):
+        idx = (torch.tensor(seen_inds, device=device) == labels[i]).nonzero(as_tuple=True)[0]
+        if len(idx) > 0:
+            mask[i, idx[0]] = False
+
+    masked_dists = all_dists.masked_fill(~mask, float('inf'))
+    neg_dist, _ = torch.min(masked_dists, dim=1)
+
+    L_margin = torch.clamp(pos_dist - neg_dist + margin, min=0.0).mean()
 
     var = torch.exp(log_var) + 1e-6
+    var_mean = var.mean(dim=1)
+    log_var_mean = log_var.mean(dim=1)
+    L_nll = (pos_dist.detach() / var_mean) + log_var_mean
+    L_nll = L_nll.mean()
 
-    sq_diff = (mu - pos_anchors) ** 2
-    nll_loss = (sq_diff / var.detach()) + log_var
-    nll_loss = 0.5 * nll_loss.sum(dim=1).mean()
-
-    cos_pos = (mu * pos_anchors).sum(dim=1)
-    d_pos = 1.0 - cos_pos
-
-    cos_seen = mu @ anchors_seen.t()
-    d_seen = 1.0 - cos_seen
-
-    loss_mat = torch.clamp(d_pos.unsqueeze(1) - d_seen + margin, min=0.0)
-
-    seen_indices_tensor = torch.tensor(seen_indices, device=device).unsqueeze(0)
-    mask = (seen_indices_tensor == labels.unsqueeze(1))
-    loss_mat[mask] = 0.0
-
-    num_negs = anchors_seen.size(0) - 1
-    if num_negs > 0:
-        triplet_loss = loss_mat.sum() / (mu.size(0) * num_negs)
-    else:
-        triplet_loss = torch.tensor(0.0, device=device)
-
-    total_loss = nll_loss + triplet_loss
+    total_loss = L_margin + 0.1 * L_nll
 
     return total_loss
