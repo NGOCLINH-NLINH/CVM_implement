@@ -200,19 +200,8 @@ def main(cfg):
         old_inds = [i for i in seen_inds]
         seen_inds += cur_inds
 
-        base_params = []
-        head_params = []
-
-        for name, param in model.named_parameters():
-            if 'fc_mu' in name or 'fc_var' in name:
-                head_params.append(param)
-            else:
-                base_params.append(param)
-
-        optimizer = optim.SGD([
-            {'params': base_params, 'lr': cfg['lr'] * 0.01},
-            {'params': head_params, 'lr': cfg['lr']}
-        ], momentum=cfg['momentum'], weight_decay=cfg['weight_decay'])
+        optimizer = optim.SGD(model.parameters(), lr=cfg['lr'], momentum=cfg['momentum'],
+                              weight_decay=cfg['weight_decay'])
 
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=cfg.get('milestones', [50, 75]), gamma=0.1)
 
