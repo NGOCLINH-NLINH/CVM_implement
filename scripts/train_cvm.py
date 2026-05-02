@@ -201,8 +201,15 @@ def main(cfg):
         old_inds = [i for i in seen_inds]
         seen_inds += cur_inds
 
-        optimizer = optim.SGD(filter(lambda p: p.requires_grad, model.parameters()),
-                              lr=cfg['lr'], momentum=cfg['momentum'], weight_decay=cfg['weight_decay'])
+        fc_params = [p for n, p in model.named_parameters() if 'fc' in n and p.requires_grad]
+        lora_params = [p for n, p in model.named_parameters() if 'lora' in n and p.requires_grad]
+
+        fc_lr = cfg['lr'] if t == 0 else cfg['lr'] * 0.01
+
+        optimizer = optim.SGD([
+            {'params': lora_params, 'lr': cfg['lr']},
+            {'params': fc_params, 'lr': fc_lr}
+        ], momentum=cfg['momentum'], weight_decay=cfg['weight_decay'])
 
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=cfg.get('milestones', [50, 75]), gamma=0.1)
 
@@ -249,7 +256,8 @@ def main(cfg):
                         if prev_model is not None and cfg['beta'] > 0:
                             with torch.no_grad():
                                 mu_prev_buf = prev_model(buf_imgs_aug)
-                            L_distill = F.mse_loss(mu_buf, mu_prev_buf)
+
+                            L_distill = (1.0 - (mu_buf * mu_prev_buf).sum(dim=1)).mean()
 
                         loss += cfg['replay_lambda'] * (
                                     Lm_buf + cfg['beta'] * L_distill + cfg['spread_lambda'] * L_spread_buf)
