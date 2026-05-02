@@ -2,6 +2,7 @@ import sys
 import os
 
 from sklearn.linear_model import LogisticRegression
+from torch import nn
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -204,7 +205,7 @@ def main(cfg):
         fc_params = [p for n, p in model.named_parameters() if 'fc' in n and p.requires_grad]
         lora_params = [p for n, p in model.named_parameters() if 'lora' in n and p.requires_grad]
 
-        fc_lr = cfg['lr'] if t == 0 else cfg['lr'] * 0.01
+        fc_lr = cfg['lr'] if t == 0 else cfg['lr'] * 0.1
 
         optimizer = optim.SGD([
             {'params': lora_params, 'lr': cfg['lr']},
@@ -218,6 +219,10 @@ def main(cfg):
 
         for epoch in range(cfg['epochs_per_task']):
             model.train()
+
+            for m in model.modules():
+                if isinstance(m, nn.BatchNorm2d):
+                    m.eval()
 
             for images, raw_images, labels in train_loader:
                 images_cuda = images.to(device)
