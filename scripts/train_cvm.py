@@ -17,9 +17,10 @@ import torchvision.datasets as datasets
 from torch.utils.data import DataLoader, Subset
 import numpy as np
 import random
+import torch.nn.functional as F
 from tqdm import tqdm
 
-from models.resnet_cvm import ProbabilisticResNetCVM
+from models.resnet_cvm import DeterministicResNetCVM, create_lora_cvm_model
 from utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, \
     set_seed, triplet_loss_k_negs, triplet_loss_seen_negs, anchor_attraction_loss, image_side_prototype_spread_loss, \
     adaptive_margin_triplet_loss_k_negs, standard_margin_loss, kl_divergence_loss, variance_regularization_loss
@@ -43,7 +44,7 @@ def evaluate_all_seen(model, test_full, seen_indices, anchors_tensor, anchor_key
     with torch.no_grad():
         for images, labels in loader:
             images = images.to(device)
-            emb, _ = model(images)
+            emb = model(images)
             sims = emb @ anchors_seen.t()
             preds = sims.argmax(dim=1).cpu().numpy()
             global_preds = [seen_indices[p] for p in preds]
@@ -67,7 +68,7 @@ def evaluate_task_full_anchors(model, test_full, task_class_inds, anchors_tensor
             images = images.to(device)
             labels = labels.to(device)
 
-            emb, _ = model(images)
+            emb = model(images)
             sims = emb @ anchors.t()
             preds = sims.argmax(dim=1)
 
@@ -87,7 +88,7 @@ def zero_shot_eval(model, anchors_tensor, unseen_indices, test_full, device):
     with torch.no_grad():
         for images, labels in loader:
             images = images.to(device)
-            emb, _ = model(images)
+            emb = model(images)
             sims = emb @ anchors_unseen.t()
             preds = sims.argmax(dim=1).cpu().numpy()
             global_preds = [unseen_indices[p] for p in preds]
@@ -180,7 +181,7 @@ def main(cfg):
     anchor_keys, anchors_tensor = load_anchors(cfg['anchors_path'], device=device)
     print("Loaded anchors:", len(anchor_keys))
 
-    model = ProbabilisticResNetCVM(out_dim=cfg['out_dim'], pretrained=cfg.get('pretrained_backbone', False)).to(device)
+    model = create_lora_cvm_model(out_dim=cfg['out_dim'], pretrained=cfg.get('pretrained_backbone', True), lora_rank=16).to(device)
     prev_model = None
 
     buffer = ReservoirBuffer(capacity=cfg['memory_size'])
@@ -200,8 +201,8 @@ def main(cfg):
         old_inds = [i for i in seen_inds]
         seen_inds += cur_inds
 
-        optimizer = optim.SGD(model.parameters(), lr=cfg['lr'], momentum=cfg['momentum'],
-                              weight_decay=cfg['weight_decay'])
+        optimizer = optim.SGD(filter(lambda p: p.requires_grad, model.parameters()),
+                              lr=cfg['lr'], momentum=cfg['momentum'], weight_decay=cfg['weight_decay'])
 
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=cfg.get('milestones', [50, 75]), gamma=0.1)
 
@@ -215,11 +216,9 @@ def main(cfg):
                 images_cuda = images.to(device)
                 labels_cuda = labels.to(device)
 
-                mu, log_var = model(images_cuda)
+                # 1. Xử lý ảnh mới (Chỉ tính Margin Loss)
+                mu = model(images_cuda)
                 Lm = standard_margin_loss(mu, labels_cuda, anchors_tensor, seen_inds, margin=cfg['margin'])
-
-                gamma = cfg.get('gamma', 0.1)
-                L_var_reg = variance_regularization_loss(log_var, target_val=0.0)
 
                 if cfg['spread_lambda'] > 0:
                     L_spread = image_side_prototype_spread_loss(mu, labels_cuda, anchors_tensor, seen_inds,
@@ -227,7 +226,7 @@ def main(cfg):
                 else:
                     L_spread = torch.tensor(0.0, device=device)
 
-                loss = Lm + cfg['spread_lambda'] * L_spread + gamma * L_var_reg
+                loss = Lm + cfg['spread_lambda'] * L_spread
 
                 if t > 0 and len(buffer) > 0 and cfg['replay_batch'] > 0 and cfg.get('replay_on', True):
                     buf_imgs_raw, buf_labels = buffer.sample(cfg['replay_batch'])
@@ -236,11 +235,9 @@ def main(cfg):
                         buf_labels = buf_labels.to(device)
                         buf_imgs_aug = replay_transform(buf_imgs_raw)
 
-                        mu_buf, log_var_buf = model(buf_imgs_aug)
-
+                        mu_buf = model(buf_imgs_aug)
                         Lm_buf = standard_margin_loss(mu_buf, buf_labels, anchors_tensor, seen_inds,
                                                       margin=cfg['margin'])
-                        L_var_reg_buf = variance_regularization_loss(log_var_buf, target_val=0.0)
 
                         if cfg['spread_lambda'] > 0:
                             L_spread_buf = image_side_prototype_spread_loss(mu_buf, buf_labels, anchors_tensor,
@@ -248,15 +245,14 @@ def main(cfg):
                         else:
                             L_spread_buf = torch.tensor(0.0, device=device)
 
-                        L_kl = torch.tensor(0.0, device=device)
+                        L_distill = torch.tensor(0.0, device=device)
                         if prev_model is not None and cfg['beta'] > 0:
                             with torch.no_grad():
-                                mu_prev_buf, log_var_prev_buf = prev_model(buf_imgs_aug)
+                                mu_prev_buf = prev_model(buf_imgs_aug)
+                            L_distill = F.mse_loss(mu_buf, mu_prev_buf)
 
-                            L_kl = kl_divergence_loss(mu_buf, log_var_buf, mu_prev_buf, log_var_prev_buf)
-
-                        loss += cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * L_kl + cfg[
-                            'spread_lambda'] * L_spread_buf + gamma * L_var_reg_buf)
+                        loss += cfg['replay_lambda'] * (
+                                    Lm_buf + cfg['beta'] * L_distill + cfg['spread_lambda'] * L_spread_buf)
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -271,6 +267,8 @@ def main(cfg):
         pbar.close()
 
         prev_model = copy.deepcopy(model).eval().to(device)
+        for param in prev_model.parameters():
+            param.requires_grad = False
 
         print(f"--- Evaluation after Task {t} ---")
 
