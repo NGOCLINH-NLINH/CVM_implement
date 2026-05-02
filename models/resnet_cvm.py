@@ -51,10 +51,3 @@ class ProbabilisticResNetCVM(nn.Module):
         log_var = torch.clamp(log_var, min=-4.0, max=10.0)
 
         return mu, log_var
-
-
-def freeze_batch_norm(module):
-    if isinstance(module, nn.BatchNorm2d) or isinstance(module, nn.BatchNorm1d):
-        module.eval()
-        module.weight.requires_grad = False
-        module.bias.requires_grad = False

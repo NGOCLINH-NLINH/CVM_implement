@@ -19,7 +19,7 @@ import numpy as np
 import random
 from tqdm import tqdm
 
-from models.resnet_cvm import ProbabilisticResNetCVM, freeze_batch_norm
+from models.resnet_cvm import ProbabilisticResNetCVM
 from utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, \
     set_seed, triplet_loss_k_negs, triplet_loss_seen_negs, anchor_attraction_loss, image_side_prototype_spread_loss, \
     adaptive_margin_triplet_loss_k_negs, uncertainty_aware_margin_loss
@@ -200,8 +200,20 @@ def main(cfg):
         old_inds = [i for i in seen_inds]
         seen_inds += cur_inds
 
-        optimizer = optim.SGD(model.parameters(), lr=cfg['lr'], momentum=cfg['momentum'],
-                              weight_decay=cfg['weight_decay'])
+        base_params = []
+        head_params = []
+
+        for name, param in model.named_parameters():
+            if 'fc_mu' in name or 'fc_var' in name:
+                head_params.append(param)
+            else:
+                base_params.append(param)
+
+        optimizer = optim.SGD([
+            {'params': base_params, 'lr': cfg['lr'] * 0.01},
+            {'params': head_params, 'lr': cfg['lr']}
+        ], momentum=cfg['momentum'], weight_decay=cfg['weight_decay'])
+
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=cfg.get('milestones', [50, 75]), gamma=0.1)
 
         total_steps = cfg['epochs_per_task'] * len(train_loader)
@@ -209,10 +221,6 @@ def main(cfg):
 
         for epoch in range(cfg['epochs_per_task']):
             model.train()
-            K = 9
-
-            if t > 0:
-                model.apply(freeze_batch_norm)
 
             for images, raw_images, labels in train_loader:
                 images_cuda = images.to(device)
