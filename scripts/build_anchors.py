@@ -11,7 +11,7 @@ def ensure_labels_file(labels_file):
     p = Path(labels_file)
     if not p.exists():
         print("Labels file not found. Creating from CIFAR100 dataset (download may be required).")
-        ds = CIFAR100(root="data", train=True, download=True)
+        ds = CIFAR100(root="data", train=True, download=False)
         p.parent.mkdir(parents=True, exist_ok=True)
         with open(p, "w") as f:
             f.write("\n".join(ds.classes))
