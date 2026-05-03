@@ -88,7 +88,8 @@ def semantic_distance_loss(emb, emb_prev, old_anchor_matrix):
 def make_cifar100_tasks(num_tasks, batch_size, augment=True):
     if augment:
         transform_train_aug = transforms.Compose([
-            transforms.RandomCrop(32, padding=4),
+            transforms.Resize(224),
+            transforms.RandomCrop(224, padding=28),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))

@@ -3,12 +3,9 @@ import os
 
 from peft import LoraConfig, get_peft_model
 from sklearn.linear_model import LogisticRegression
-from torch import nn
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import argparse
-import yaml
 import copy
 import json
 from pathlib import Path
@@ -18,14 +15,11 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 from torch.utils.data import DataLoader, Subset
 import numpy as np
-import random
-import torch.nn.functional as F
 from tqdm import tqdm
-
-from models.resnet_cvm import DeterministicResNetCVM
-from utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, \
-    set_seed, triplet_loss_k_negs, triplet_loss_seen_negs, anchor_attraction_loss, image_side_prototype_spread_loss, \
-    adaptive_margin_triplet_loss_k_negs, standard_margin_loss, kl_divergence_loss, variance_regularization_loss, evaluate_all_seen_multi_lora
+from models.vit_cvm import ViTCVM
+from utils.o_lora_core import OLoRAManager
+from utils.utils import load_anchors, ReservoirBuffer, make_cifar100_tasks, \
+    set_seed, adaptive_margin_triplet_loss_seen_negs
 
 replay_transform = transforms.Compose([
     transforms.RandomCrop(32, padding=4),
@@ -183,27 +177,18 @@ def main(cfg):
     anchor_keys, anchors_tensor = load_anchors(cfg['anchors_path'], device=device)
     print("Loaded anchors:", len(anchor_keys))
 
-    base_model = DeterministicResNetCVM(out_dim=cfg['out_dim'], pretrained=True).to(device)
-
+    base_model = ViTCVM(out_dim=cfg['out_dim'], pretrained=True).to(device)
     for param in base_model.parameters():
         param.requires_grad = False
 
-    task_router = nn.Sequential(
-        nn.Linear(512, 256),
-        nn.BatchNorm1d(256),
-        nn.ReLU(),
-        nn.Dropout(0.4),
-        nn.Linear(256, cfg['num_tasks'])
-    ).to(device)
-
     lora_config = LoraConfig(
         r=16,
-        target_modules=["conv1", "conv2"],
+        target_modules=["qkv"],
         modules_to_save=["fc"],
         bias="none"
     )
-
-    prev_model = None
+    model = get_peft_model(base_model, lora_config)
+    o_lora_manager = OLoRAManager(model, threshold=cfg.get('threshold', 0.97))
 
     buffer = ReservoirBuffer(capacity=cfg['memory_size'])
 
@@ -222,34 +207,29 @@ def main(cfg):
         old_inds = [i for i in seen_inds]
         seen_inds += cur_inds
 
-        adapter_name = f"task_{t}"
-        if t == 0:
-            global model
-            model = get_peft_model(base_model, lora_config, adapter_name=adapter_name)
-        else:
-            model.add_adapter(adapter_name, lora_config)
-
-        model.set_adapter(adapter_name)
         optimizer = optim.SGD(filter(lambda p: p.requires_grad, model.parameters()),
                               lr=cfg['lr'], momentum=cfg['momentum'], weight_decay=cfg['weight_decay'])
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=cfg.get('milestones', [50, 75]), gamma=0.1)
+
         total_steps = cfg['epochs_per_task'] * len(train_loader)
         pbar = tqdm(total=total_steps, desc=f"Task {t}", dynamic_ncols=True)
 
         for epoch in range(cfg['epochs_per_task']):
             model.train()
-            for m in model.modules():
-                if isinstance(m, nn.BatchNorm2d):
-                    m.eval()
-
             for images, raw_images, labels in train_loader:
                 images_cuda, labels_cuda = images.to(device), labels.to(device)
 
                 mu = model(images_cuda)
-                loss = standard_margin_loss(mu, labels_cuda, anchors_tensor, seen_inds, margin=cfg['margin'])
+                pos_emb = anchors_tensor[labels_cuda]
+                loss = adaptive_margin_triplet_loss_seen_negs(mu, pos_emb, labels_cuda, anchors_tensor, seen_inds,
+                                                              base_margin=cfg['margin'])
 
                 optimizer.zero_grad()
                 loss.backward()
+
+                if t > 0:
+                    o_lora_manager.apply_gradient_projection()
+
                 optimizer.step()
                 buffer.add_batch(raw_images, labels, task_id=t)
                 pbar.update(1)
@@ -257,33 +237,7 @@ def main(cfg):
 
             scheduler.step()
 
-        print("Training Task Router...")
-        router_optimizer = optim.Adam(task_router.parameters(), lr=cfg.get('router_lr', 0.0005))
-        criterion_router = nn.CrossEntropyLoss()
-
-        buf_imgs, _, buf_task_ids = buffer.get_all_data()
-
-        if len(buf_imgs) > 0:
-            task_router.train()
-            buf_dataset = torch.utils.data.TensorDataset(buf_imgs, buf_task_ids)
-            buf_loader = DataLoader(buf_dataset, batch_size=cfg.get('batch_size', 64), shuffle=True)
-
-            for _ in range(cfg.get('router_epochs', 10)):
-                for b_img, b_tid in buf_loader:
-                    b_img, b_tid = b_img.to(device), b_tid.to(device)
-                    b_img_aug = replay_transform(b_img)
-                    with torch.no_grad():
-                        with model.disable_adapter():
-                            feats = model.base_model.features(b_img_aug)
-                            feats = model.base_model.avgpool(feats)
-                            feats = torch.flatten(feats, 1)
-
-                    router_preds = task_router(feats)
-                    router_loss = criterion_router(router_preds, b_tid)
-
-                    router_optimizer.zero_grad()
-                    router_loss.backward()
-                    router_optimizer.step()
+        # buf_imgs, _, buf_task_ids = buffer.get_all_data()
         pbar.close()
 
         prev_model = copy.deepcopy(model).eval().to(device)
@@ -292,10 +246,7 @@ def main(cfg):
 
         print(f"--- Evaluation after Task {t} ---")
 
-        seen_test_idx = [i for i, lbl in enumerate(test_full.targets) if lbl in seen_inds]
-        seen_test_loader = DataLoader(Subset(test_full, seen_test_idx), batch_size=cfg.get('eval_batch_size', 128), shuffle=False, num_workers=2)
-
-        acc_all_seen = evaluate_all_seen_multi_lora(model, task_router, seen_test_loader, anchors_tensor, device)
+        acc_all_seen = evaluate_all_seen(model, test_full, seen_inds, anchors_tensor, anchor_keys, device)
         seen_acc_history.append(acc_all_seen)
         print(f"Acc on all seen classes after task {t}: {acc_all_seen:.4f}")
 
@@ -304,8 +255,6 @@ def main(cfg):
             if i_task > t:
                 per_task_accs.append(None)
             else:
-                adapter_name = f"task_{i_task}"
-                model.set_adapter(adapter_name)
                 acc_old_task = evaluate_task_full_anchors(model, test_full, t_classes, anchors_tensor, anchor_keys,
                                                           device)
                 per_task_accs.append(acc_old_task)
