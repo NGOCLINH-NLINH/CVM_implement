@@ -182,7 +182,7 @@ def main(cfg):
         param.requires_grad = False
 
     lora_config = LoraConfig(
-        r=16,
+        r=cfg.get('lora_rank', 16),
         target_modules=["qkv"],
         modules_to_save=["fc"],
         bias="none"
