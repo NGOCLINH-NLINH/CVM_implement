@@ -251,7 +251,7 @@ def main(cfg):
             scheduler.step()
 
         print("Training Task Router...")
-        router_optimizer = optim.Adam(task_router.parameters(), lr=0.001)
+        router_optimizer = optim.Adam(task_router.parameters(), lr=cfg.get('router_lr', 0.0005))
         criterion_router = nn.CrossEntropyLoss()
 
         buf_imgs, _, buf_task_ids = buffer.get_all_data()
@@ -259,7 +259,7 @@ def main(cfg):
         if len(buf_imgs) > 0:
             task_router.train()
             buf_dataset = torch.utils.data.TensorDataset(buf_imgs, buf_task_ids)
-            buf_loader = DataLoader(buf_dataset, batch_size=128, shuffle=True)
+            buf_loader = DataLoader(buf_dataset, batch_size=cfg.get('batch_size', 64), shuffle=True)
 
             for _ in range(cfg.get('router_epochs', 10)):
                 for b_img, b_tid in buf_loader:
@@ -286,7 +286,7 @@ def main(cfg):
         print(f"--- Evaluation after Task {t} ---")
 
         seen_test_idx = [i for i, lbl in enumerate(test_full.targets) if lbl in seen_inds]
-        seen_test_loader = DataLoader(Subset(test_full, seen_test_idx), batch_size=128, shuffle=False, num_workers=2)
+        seen_test_loader = DataLoader(Subset(test_full, seen_test_idx), batch_size=cfg.get('eval_batch_size', 128), shuffle=False, num_workers=2)
 
         acc_all_seen = evaluate_all_seen_multi_lora(model, task_router, seen_test_loader, anchors_tensor, device)
         seen_acc_history.append(acc_all_seen)
