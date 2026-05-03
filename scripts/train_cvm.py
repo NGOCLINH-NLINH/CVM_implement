@@ -29,10 +29,10 @@ replay_transform = transforms.Compose([
 
 
 def evaluate_all_seen(model, test_full, seen_indices, anchors_tensor, anchor_keys, device):
-    idxs = [i for i, (_, lbl) in enumerate(test_full) if lbl in seen_indices]
+    idxs = [i for i, lbl in enumerate(test_full.targets) if lbl in seen_indices]
     if len(idxs) == 0:
         return 0.0
-    loader = DataLoader(Subset(test_full, idxs), batch_size=128, shuffle=False, num_workers=2)
+    loader = DataLoader(Subset(test_full, idxs), batch_size=32, shuffle=False, num_workers=2)
     model.eval()
     anchors_seen = anchors_tensor[seen_indices].to(device)
     correct = 0
@@ -51,10 +51,8 @@ def evaluate_all_seen(model, test_full, seen_indices, anchors_tensor, anchor_key
 
 
 def evaluate_task_full_anchors(model, test_full, task_class_inds, anchors_tensor, anchor_keys, device):
-    idxs = [i for i, (_, lbl) in enumerate(test_full) if lbl in task_class_inds]
-    if len(idxs) == 0:
-        return 0.0
-    loader = DataLoader(Subset(test_full, idxs), batch_size=128, shuffle=False, num_workers=2)
+    idxs = [i for i, lbl in enumerate(test_full.targets) if lbl in task_class_inds]
+    loader = DataLoader(Subset(test_full, idxs), batch_size=32, shuffle=False, num_workers=2)
     model.eval()
     anchors = anchors_tensor.to(device)
     correct = 0
@@ -240,6 +238,7 @@ def main(cfg):
 
         # buf_imgs, _, buf_task_ids = buffer.get_all_data()
         pbar.close()
+        o_lora_manager.collect_features_and_compute_P(train_loader, device)
 
         prev_model = copy.deepcopy(model).eval().to(device)
         for param in prev_model.parameters():
