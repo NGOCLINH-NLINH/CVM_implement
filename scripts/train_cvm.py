@@ -206,12 +206,18 @@ def main(cfg):
         fc_params = [p for n, p in model.named_parameters() if 'fc' in n and p.requires_grad]
         lora_params = [p for n, p in model.named_parameters() if 'lora' in n and p.requires_grad]
 
-        fc_lr = cfg['lr'] if t == 0 else cfg['lr'] * 0.1
+        if t == 0:
+            optimizer = optim.SGD([
+                {'params': lora_params, 'lr': cfg['lr']},
+                {'params': fc_params, 'lr': cfg['lr']}
+            ], momentum=cfg['momentum'], weight_decay=cfg['weight_decay'])
+        else:
+            for p in fc_params:
+                p.requires_grad = False
 
-        optimizer = optim.SGD([
-            {'params': lora_params, 'lr': cfg['lr']},
-            {'params': fc_params, 'lr': fc_lr}
-        ], momentum=cfg['momentum'], weight_decay=cfg['weight_decay'])
+            optimizer = optim.SGD([
+                {'params': lora_params, 'lr': cfg['lr']}
+            ], momentum=cfg['momentum'], weight_decay=cfg['weight_decay'])
 
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=cfg.get('milestones', [50, 75]), gamma=0.1)
 
