@@ -96,28 +96,26 @@ def make_cifar100_tasks(num_tasks, batch_size, augment=True):
         ])
     else:
         transform_train_aug = transforms.Compose([
+            transforms.Resize(224),
             transforms.ToTensor(),
             transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
         ])
 
-    transform_raw = transforms.ToTensor()
-
     transform_test = transforms.Compose([
+        transforms.Resize(224),
         transforms.ToTensor(),
         transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
     ])
 
-    train_full_raw = datasets.CIFAR100(root="data", train=True, download=True, transform=None)
+    train_full = datasets.CIFAR100(root="data", train=True, download=True, transform=transform_train_aug)
     test_full = datasets.CIFAR100(root="data", train=False, download=True, transform=transform_test)
 
-    train_dataset_wrapper = DualTransformDataset(train_full_raw, transform_train_aug, transform_raw)
-
-    classes = train_full_raw.classes
+    classes = train_full.classes
     num_classes = len(classes)
     per_task = num_classes // num_tasks
     tasks = []
 
-    all_targets = np.array(train_full_raw.targets)
+    all_targets = np.array(train_full.targets)
     all_test_targets = np.array(test_full.targets)
 
     for t in range(num_tasks):
@@ -127,11 +125,13 @@ def make_cifar100_tasks(num_tasks, batch_size, augment=True):
         train_idx = np.where((all_targets >= start) & (all_targets < end))[0]
         test_idx = np.where((all_test_targets >= start) & (all_test_targets < end))[0]
 
-        train_subset = Subset(train_dataset_wrapper, train_idx)
+        train_subset = Subset(train_full, train_idx)
         test_subset = Subset(test_full, test_idx)
-        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=2)
-        test_loader = DataLoader(test_subset, batch_size=batch_size, shuffle=False, num_workers=2)
+
+        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
+        test_loader = DataLoader(test_subset, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
         tasks.append((train_loader, test_loader, list(range(start, end))))
+
     return tasks, classes
 
 

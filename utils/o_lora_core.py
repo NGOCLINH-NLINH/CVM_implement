@@ -31,12 +31,13 @@ class OLoRAManager:
 
         self.model.eval()
         with torch.no_grad():
-            for images, _, _ in dataloader:
+            for images, labels in dataloader:
                 self.model(images.to(device))
                 if len(list(self.activation_cache.values())[0]) > 2000:
                     break
 
-        for h in self.hooks: h.remove()
+        for h in self.hooks:
+            h.remove()
         self.hooks = []
 
         for name, acts in self.activation_cache.items():

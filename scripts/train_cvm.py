@@ -200,10 +200,10 @@ def main(cfg):
 
     Path(cfg['checkpoints_dir']).mkdir(parents=True, exist_ok=True)
 
+    scaler = torch.cuda.amp.GradScaler()
     for t, (train_loader, test_loader, class_inds) in enumerate(tasks):
         print(f"\n=== Training Task {t} (Classes: {min(class_inds)}-{max(class_inds)}) ===")
         cur_inds = class_inds
-        old_inds = [i for i in seen_inds]
         seen_inds += cur_inds
 
         optimizer = optim.SGD(filter(lambda p: p.requires_grad, model.parameters()),
@@ -215,22 +215,24 @@ def main(cfg):
 
         for epoch in range(cfg['epochs_per_task']):
             model.train()
-            for images, raw_images, labels in train_loader:
+            for images, labels in train_loader:
                 images_cuda, labels_cuda = images.to(device), labels.to(device)
 
-                mu = model(images_cuda)
-                pos_emb = anchors_tensor[labels_cuda]
-                loss = adaptive_margin_triplet_loss_seen_negs(mu, pos_emb, labels_cuda, anchors_tensor, seen_inds,
-                                                              base_margin=cfg['margin'])
-
                 optimizer.zero_grad()
-                loss.backward()
+
+                with torch.cuda.amp.autocast():
+                    mu = model(images_cuda)
+                    pos_emb = anchors_tensor[labels_cuda]
+                    loss = adaptive_margin_triplet_loss_seen_negs(mu, pos_emb, labels_cuda, anchors_tensor, seen_inds,
+                                                                  base_margin=cfg['margin'])
+                scaler.scale(loss).backward()
 
                 if t > 0:
+                    scaler.unscale_(optimizer)
                     o_lora_manager.apply_gradient_projection()
 
-                optimizer.step()
-                # buffer.add_batch(raw_images, labels, task_id=t)
+                scaler.step(optimizer)
+                scaler.update()
                 pbar.update(1)
                 pbar.set_postfix({"Loss": f"{loss.item():.3f}"})
 
