@@ -267,7 +267,7 @@ def main(cfg):
                     b_img_aug = replay_transform(b_img)
                     with torch.no_grad():
                         with model.disable_adapter():
-                            feats = model.base_model.features(b_img)
+                            feats = model.base_model.features(b_img_aug)
                             feats = model.base_model.avgpool(feats)
                             feats = torch.flatten(feats, 1)
 
