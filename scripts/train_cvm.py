@@ -264,7 +264,7 @@ def main(cfg):
             for _ in range(cfg.get('router_epochs', 10)):
                 for b_img, b_tid in buf_loader:
                     b_img, b_tid = b_img.to(device), b_tid.to(device)
-
+                    b_img_aug = replay_transform(b_img)
                     with torch.no_grad():
                         with model.disable_adapter():
                             feats = model.base_model.features(b_img)
