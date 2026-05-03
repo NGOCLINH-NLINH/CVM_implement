@@ -166,6 +166,7 @@ def main(cfg):
     #     transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
     # ]))
     test_full = datasets.CIFAR100(root="data", train=False, download=True, transform=transforms.Compose([
+        transforms.Resize(224),
         transforms.ToTensor(),
         transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
     ]))
@@ -190,7 +191,7 @@ def main(cfg):
     model = get_peft_model(base_model, lora_config)
     o_lora_manager = OLoRAManager(model, threshold=cfg.get('threshold', 0.97))
 
-    buffer = ReservoirBuffer(capacity=cfg['memory_size'])
+    # buffer = ReservoirBuffer(capacity=cfg['memory_size'])
 
     seen_inds = []
 
@@ -231,7 +232,7 @@ def main(cfg):
                     o_lora_manager.apply_gradient_projection()
 
                 optimizer.step()
-                buffer.add_batch(raw_images, labels, task_id=t)
+                # buffer.add_batch(raw_images, labels, task_id=t)
                 pbar.update(1)
                 pbar.set_postfix({"Loss": f"{loss.item():.3f}"})
 
