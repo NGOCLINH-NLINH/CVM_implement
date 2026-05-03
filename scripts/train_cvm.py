@@ -1,6 +1,7 @@
 import sys
 import os
 
+from peft import LoraConfig, get_peft_model
 from sklearn.linear_model import LogisticRegression
 from torch import nn
 
@@ -21,10 +22,10 @@ import random
 import torch.nn.functional as F
 from tqdm import tqdm
 
-from models.resnet_cvm import DeterministicResNetCVM, create_lora_cvm_model
+from models.resnet_cvm import DeterministicResNetCVM
 from utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, \
     set_seed, triplet_loss_k_negs, triplet_loss_seen_negs, anchor_attraction_loss, image_side_prototype_spread_loss, \
-    adaptive_margin_triplet_loss_k_negs, standard_margin_loss, kl_divergence_loss, variance_regularization_loss
+    adaptive_margin_triplet_loss_k_negs, standard_margin_loss, kl_divergence_loss, variance_regularization_loss, evaluate_all_seen_multi_lora
 
 replay_transform = transforms.Compose([
     transforms.RandomCrop(32, padding=4),
@@ -164,12 +165,12 @@ def main(cfg):
     print(f"{'=' * 50}\n")
 
     tasks, class_names = make_cifar100_tasks(cfg['num_tasks'], cfg['batch_size'], augment=True)
-    train_full = datasets.CIFAR100(root="data", train=True, download=True, transform=transforms.Compose([
-        transforms.RandomCrop(32, padding=4),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
-    ]))
+    # train_full = datasets.CIFAR100(root="data", train=True, download=True, transform=transforms.Compose([
+    #     transforms.RandomCrop(32, padding=4),
+    #     transforms.RandomHorizontalFlip(),
+    #     transforms.ToTensor(),
+    #     transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
+    # ]))
     test_full = datasets.CIFAR100(root="data", train=False, download=True, transform=transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
@@ -182,8 +183,19 @@ def main(cfg):
     anchor_keys, anchors_tensor = load_anchors(cfg['anchors_path'], device=device)
     print("Loaded anchors:", len(anchor_keys))
 
-    model = create_lora_cvm_model(out_dim=cfg['out_dim'], pretrained=cfg.get('pretrained_backbone', True),
-                                  lora_rank=cfg.get('lora_rank', 16)).to(device)
+    base_model = DeterministicResNetCVM(out_dim=cfg['out_dim'], pretrained=True).to(device)
+
+    for param in base_model.parameters():
+        param.requires_grad = False
+
+    task_router = nn.Linear(512, cfg['num_tasks']).to(device)
+    lora_config = LoraConfig(
+        r=16,
+        target_modules=["conv1", "conv2"],
+        modules_to_save=["fc"],
+        bias="none"
+    )
+
     prev_model = None
 
     buffer = ReservoirBuffer(capacity=cfg['memory_size'])
@@ -203,88 +215,68 @@ def main(cfg):
         old_inds = [i for i in seen_inds]
         seen_inds += cur_inds
 
-        fc_params = [p for n, p in model.named_parameters() if 'fc' in n and p.requires_grad]
-        lora_params = [p for n, p in model.named_parameters() if 'lora' in n and p.requires_grad]
-
+        adapter_name = f"task_{t}"
         if t == 0:
-            optimizer = optim.SGD([
-                {'params': lora_params, 'lr': cfg['lr']},
-                {'params': fc_params, 'lr': cfg['lr']}
-            ], momentum=cfg['momentum'], weight_decay=cfg['weight_decay'])
+            global model
+            model = get_peft_model(base_model, lora_config, adapter_name=adapter_name)
         else:
-            for p in fc_params:
-                p.requires_grad = False
+            model.add_adapter(adapter_name, lora_config)
 
-            optimizer = optim.SGD([
-                {'params': lora_params, 'lr': cfg['lr']}
-            ], momentum=cfg['momentum'], weight_decay=cfg['weight_decay'])
-
+        model.set_adapter(adapter_name)
+        optimizer = optim.SGD(filter(lambda p: p.requires_grad, model.parameters()),
+                              lr=cfg['lr'], momentum=cfg['momentum'], weight_decay=cfg['weight_decay'])
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=cfg.get('milestones', [50, 75]), gamma=0.1)
-
         total_steps = cfg['epochs_per_task'] * len(train_loader)
         pbar = tqdm(total=total_steps, desc=f"Task {t}", dynamic_ncols=True)
 
         for epoch in range(cfg['epochs_per_task']):
             model.train()
-
             for m in model.modules():
                 if isinstance(m, nn.BatchNorm2d):
                     m.eval()
 
             for images, raw_images, labels in train_loader:
-                images_cuda = images.to(device)
-                labels_cuda = labels.to(device)
+                images_cuda, labels_cuda = images.to(device), labels.to(device)
 
                 mu = model(images_cuda)
-                Lm = standard_margin_loss(mu, labels_cuda, anchors_tensor, seen_inds, margin=cfg['margin'])
-
-                if cfg['spread_lambda'] > 0:
-                    L_spread = image_side_prototype_spread_loss(mu, labels_cuda, anchors_tensor, seen_inds,
-                                                                delta=cfg['spread_delta'])
-                else:
-                    L_spread = torch.tensor(0.0, device=device)
-
-                loss = Lm + cfg['spread_lambda'] * L_spread
-
-                if t > 0 and len(buffer) > 0 and cfg['replay_batch'] > 0 and cfg.get('replay_on', True):
-                    buf_imgs_raw, buf_labels = buffer.sample(cfg['replay_batch'])
-                    if buf_imgs_raw is not None:
-                        buf_imgs_raw = buf_imgs_raw.to(device)
-                        buf_labels = buf_labels.to(device)
-                        buf_imgs_aug = replay_transform(buf_imgs_raw)
-
-                        mu_buf = model(buf_imgs_aug)
-                        Lm_buf = standard_margin_loss(mu_buf, buf_labels, anchors_tensor, seen_inds,
-                                                      margin=cfg['margin'])
-
-                        if cfg['spread_lambda'] > 0:
-                            L_spread_buf = image_side_prototype_spread_loss(mu_buf, buf_labels, anchors_tensor,
-                                                                            seen_inds, delta=cfg['spread_delta'])
-                        else:
-                            L_spread_buf = torch.tensor(0.0, device=device)
-
-                        L_distill = torch.tensor(0.0, device=device)
-
-                        if prev_model is not None and cfg['beta'] > 0 and len(old_inds) > 0:
-                            old_anchor_mat = anchors_tensor[old_inds].to(device)
-                            with torch.no_grad():
-                                mu_prev_buf = prev_model(buf_imgs_aug)
-
-                            L_distill = semantic_distance_loss(mu_buf, mu_prev_buf, old_anchor_mat)
-
-                        loss += (cfg['replay_lambda'] *
-                                 (Lm_buf + cfg['beta'] * L_distill + cfg['spread_lambda'] * L_spread_buf))
+                loss = standard_margin_loss(mu, labels_cuda, anchors_tensor, seen_inds, margin=cfg['margin'])
 
                 optimizer.zero_grad()
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
                 optimizer.step()
-                buffer.add_batch(raw_images, labels)
-
+                buffer.add_batch(raw_images, labels, task_id=t)
                 pbar.update(1)
                 pbar.set_postfix({"Loss": f"{loss.item():.3f}"})
 
             scheduler.step()
+
+        print("Training Task Router...")
+        router_optimizer = optim.Adam(task_router.parameters(), lr=0.001)
+        criterion_router = nn.CrossEntropyLoss()
+
+        buf_imgs, _, buf_task_ids = buffer.get_all_data()
+
+        if len(buf_imgs) > 0:
+            task_router.train()
+            buf_dataset = torch.utils.data.TensorDataset(buf_imgs, buf_task_ids)
+            buf_loader = DataLoader(buf_dataset, batch_size=128, shuffle=True)
+
+            for _ in range(cfg.get('router_epochs', 10)):
+                for b_img, b_tid in buf_loader:
+                    b_img, b_tid = b_img.to(device), b_tid.to(device)
+
+                    with torch.no_grad():
+                        with model.disable_adapter():
+                            feats = model.base_model.features(b_img)
+                            feats = model.base_model.avgpool(feats)
+                            feats = torch.flatten(feats, 1)
+
+                    router_preds = task_router(feats)
+                    router_loss = criterion_router(router_preds, b_tid)
+
+                    router_optimizer.zero_grad()
+                    router_loss.backward()
+                    router_optimizer.step()
         pbar.close()
 
         prev_model = copy.deepcopy(model).eval().to(device)
@@ -293,24 +285,20 @@ def main(cfg):
 
         print(f"--- Evaluation after Task {t} ---")
 
-        acc_all_seen = evaluate_all_seen(model, test_full, seen_inds, anchors_tensor, anchor_keys, device)
+        seen_test_idx = [i for i, lbl in enumerate(test_full.targets) if lbl in seen_inds]
+        seen_test_loader = DataLoader(Subset(test_full, seen_test_idx), batch_size=128, shuffle=False, num_workers=2)
+
+        acc_all_seen = evaluate_all_seen_multi_lora(model, task_router, seen_test_loader, anchors_tensor, device)
         seen_acc_history.append(acc_all_seen)
         print(f"Acc on all seen classes after task {t}: {acc_all_seen:.4f}")
 
-        # lp_acc = linear_probe_all(model, train_full, test_full, seen_inds, device, cfg['out_dim'])
-        # linear_probe_history.append(lp_acc)
-        # print(f"Linear probe acc on seen classes after task {t}: {lp_acc:.4f}")
-
-        unseen_inds = [i for i in range(len(anchor_keys)) if i not in seen_inds]
-        zs = zero_shot_eval(model, anchors_tensor, unseen_inds, test_full, device)
-        zero_shot_history.append(zs)
-        print(f"Zero-shot acc on unseen classes after task {t}: {zs:.4f}")
-
         per_task_accs = []
-        for i_task, (_, _, t_classes) in enumerate(tasks):
+        for i_task, (_, test_loader_task, t_classes) in enumerate(tasks):
             if i_task > t:
                 per_task_accs.append(None)
             else:
+                adapter_name = f"task_{i_task}"
+                model.set_adapter(adapter_name)
                 acc_old_task = evaluate_task_full_anchors(model, test_full, t_classes, anchors_tensor, anchor_keys,
                                                           device)
                 per_task_accs.append(acc_old_task)

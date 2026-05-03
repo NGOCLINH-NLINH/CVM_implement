@@ -46,11 +46,11 @@ class ReservoirBuffer:
         random.seed(seed)
         np.random.seed(seed)
 
-    def add_batch(self, images, labels):
+    def add_batch(self, images, labels, task_id):
         images = images.detach().cpu()
         labels = labels.detach().cpu()
         for i in range(images.shape[0]):
-            item = (images[i].clone(), int(labels[i].item()))
+            item = (images[i].clone(), int(labels[i].item()), task_id)
             self.n_seen += 1
             if len(self.buffer) < self.capacity:
                 self.buffer.append(item)
@@ -59,16 +59,13 @@ class ReservoirBuffer:
                 if j < self.capacity:
                     self.buffer[j] = item
 
-    def sample(self, batch_size):
+    def get_all_data(self):
         if len(self.buffer) == 0:
-            return None, None
-        batch = random.sample(self.buffer, k=min(batch_size, len(self.buffer)))
-        imgs = torch.stack([b[0] for b in batch])
-        labels = torch.tensor([b[1] for b in batch], dtype=torch.long)
-        return imgs, labels
-
-    def __len__(self):
-        return len(self.buffer)
+            return [], [], []
+        imgs = torch.stack([b[0] for b in self.buffer])
+        labels = torch.tensor([b[1] for b in self.buffer], dtype=torch.long)
+        task_ids = torch.tensor([b[2] for b in self.buffer], dtype=torch.long)
+        return imgs, labels, task_ids
 
 
 def triplet_loss_emb(emb, pos_emb, neg_emb, margin=0.1):
@@ -280,3 +277,38 @@ def kl_divergence_loss(mu, log_var, mu_prev, log_var_prev):
 
 def variance_regularization_loss(log_var, target_val=0.0):
     return torch.mean((log_var - target_val)**2)
+
+
+def evaluate_all_seen_multi_lora(model, task_router, test_loader, anchors_tensor, device):
+    model.eval()
+    task_router.eval()
+    correct, total = 0, 0
+
+    with torch.no_grad():
+        for images, labels in test_loader:
+            images = images.to(device)
+            with model.disable_adapter():
+                feats = model.base_model.features(images)
+                feats = model.base_model.avgpool(feats)
+                feats = torch.flatten(feats, 1)
+
+            task_preds = task_router(feats).argmax(dim=1)
+            unique_tasks = torch.unique(task_preds)
+
+            for task_id in unique_tasks:
+                mask = (task_preds == task_id)
+                sub_images = images[mask]
+                sub_labels = labels[mask]
+                adapter_name = f"task_{task_id.item()}"
+
+                if adapter_name in model.peft_config:
+                    model.set_adapter(adapter_name)
+
+                    sub_mu = model(sub_images)
+                    sims = sub_mu @ anchors_tensor.t()
+                    final_preds = sims.argmax(dim=1).cpu()
+
+                    correct += (final_preds == sub_labels.cpu()).sum().item()
+                total += len(sub_labels)
+
+    return correct / total if total > 0 else 0.0
