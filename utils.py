@@ -287,6 +287,7 @@ def evaluate_all_seen_multi_lora(model, task_router, test_loader, anchors_tensor
     with torch.no_grad():
         for images, labels in test_loader:
             images = images.to(device)
+            labels = labels.to(device)
             with model.disable_adapter():
                 feats = model.base_model.features(images)
                 feats = model.base_model.avgpool(feats)
