@@ -229,7 +229,6 @@ def main(cfg):
                 images_cuda = images.to(device)
                 labels_cuda = labels.to(device)
 
-                # 1. Xử lý ảnh mới (Chỉ tính Margin Loss)
                 mu = model(images_cuda)
                 Lm = standard_margin_loss(mu, labels_cuda, anchors_tensor, seen_inds, margin=cfg['margin'])
 
@@ -259,14 +258,16 @@ def main(cfg):
                             L_spread_buf = torch.tensor(0.0, device=device)
 
                         L_distill = torch.tensor(0.0, device=device)
-                        if prev_model is not None and cfg['beta'] > 0:
+
+                        if prev_model is not None and cfg['beta'] > 0 and len(old_inds) > 0:
+                            old_anchor_mat = anchors_tensor[old_inds].to(device)
                             with torch.no_grad():
                                 mu_prev_buf = prev_model(buf_imgs_aug)
 
-                            L_distill = (1.0 - (mu_buf * mu_prev_buf).sum(dim=1)).mean()
+                            L_distill = semantic_distance_loss(mu_buf, mu_prev_buf, old_anchor_mat)
 
-                        loss += cfg['replay_lambda'] * (
-                                    Lm_buf + cfg['beta'] * L_distill + cfg['spread_lambda'] * L_spread_buf)
+                        loss += (cfg['replay_lambda'] *
+                                 (Lm_buf + cfg['beta'] * L_distill + cfg['spread_lambda'] * L_spread_buf))
 
                 optimizer.zero_grad()
                 loss.backward()
