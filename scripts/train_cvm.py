@@ -188,7 +188,14 @@ def main(cfg):
     for param in base_model.parameters():
         param.requires_grad = False
 
-    task_router = nn.Linear(512, cfg['num_tasks']).to(device)
+    task_router = nn.Sequential(
+        nn.Linear(512, 256),
+        nn.BatchNorm1d(256),
+        nn.ReLU(),
+        nn.Dropout(0.4),
+        nn.Linear(256, cfg['num_tasks'])
+    ).to(device)
+
     lora_config = LoraConfig(
         r=16,
         target_modules=["conv1", "conv2"],
