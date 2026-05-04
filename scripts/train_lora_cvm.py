@@ -237,7 +237,7 @@ def main(cfg):
         print(f"[*] Average Accuracy on all SEEN tasks: {acc_all_seen:.4f}")
 
         unseen_inds = [i for i in range(len(anchor_keys)) if i not in seen_inds]
-        zs = zero_shot2_eval(model, anchors_tensor, unseen_inds, test_full, device)
+        zs = zero_shot_eval(model, anchors_tensor, unseen_inds, test_full, device)
         zero_shot_history.append(zs)
         print(f"[*] Zero-shot accuracy on UNSEEN classes: {zs:.4f}")
 
