@@ -1,6 +1,8 @@
 import sys
 import os
 
+from utils.adam_nullspace import Adam_NullSpace
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import argparse
@@ -19,7 +21,7 @@ from tqdm import tqdm
 from models.vit_cvm import ViT_ACVM
 from utils.adam_proj import Adam
 from utils.utils import (load_anchors, make_cifar100_tasks, set_seed, adaptive_margin_triplet_loss_k_negs,
-                         adaptive_margin_triplet_loss_seen_negs)
+                         adaptive_margin_triplet_loss_seen_negs, semantic_distance_loss)
 
 
 def evaluate_all_seen(model, test_full, seen_indices, anchors_tensor, device):
@@ -93,19 +95,12 @@ def evaluate_specific_task(model, test_full, eval_indices, seen_indices, anchors
     loader = DataLoader(Subset(test_full, idxs), batch_size=128, shuffle=False, num_workers=2)
 
     model.eval()
-    # anchors_seen = anchors_tensor[seen_indices].to(device)
-    ref_vectors = []
-    for c in seen_indices:
-        if hasattr(model, 'prototypes') and c in model.prototypes:
-            ref_vectors.append(model.prototypes[c].to(device))
-        else:
-            ref_vectors.append(anchors_tensor[c].to(device))
-    ref_matrix = torch.stack(ref_vectors)
+    anchors_seen = anchors_tensor[seen_indices].to(device)
     correct, total = 0, 0
     with torch.no_grad():
         for images, labels in loader:
             emb = model(images.to(device))
-            sims = emb @ ref_matrix.t()
+            sims = emb @ anchors_seen.t()
             preds = sims.argmax(dim=1).cpu().numpy()
 
             global_preds = [seen_indices[p] for p in preds]
@@ -143,6 +138,16 @@ def main(cfg):
 
     task_classes_list = []
 
+    params_svd = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_A' in n]
+    params_normal = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_B' in n]
+    wd_svd = cfg.get('weight_decay_normal', 0.0005)
+
+    opt_groups = [
+        {'params': params_svd, 'svd': True, 'thres': cfg.get('thres', 0.98), 'weight_decay': wd_svd},
+        {'params': params_normal, 'svd': False, 'weight_decay': wd_svd}
+    ]
+    optimizer = Adam_NullSpace(opt_groups, lr=cfg.get('lr', 0.0005))
+
     for t, (train_loader, test_loader, class_inds) in enumerate(tasks):
         task_classes_list.append(class_inds)
 
@@ -153,39 +158,19 @@ def main(cfg):
         model.update_task()
         model.freeze_for_task()
 
-        trainable_params = [p for n, p in model.named_parameters() if p.requires_grad]
-        num_trainable = sum(p.numel() for p in trainable_params)
-        print(f">>> DEBUG: Number of params being trained: {num_trainable}")
-        if num_trainable == 0:
-            raise ValueError("FATAL: None param is being trained")
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = cfg.get('lr', 0.0005)
+        for state in optimizer.state.values():
+            if 'exp_avg' in state: state['exp_avg'].zero_()
+            if 'exp_avg_sq' in state: state['exp_avg_sq'].zero_()
 
-        params_svd = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_A' in n]
-        params_normal = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_B' in n]
+        # trainable_params = [p for n, p in model.named_parameters() if p.requires_grad]
+        # num_trainable = sum(p.numel() for p in trainable_params)
+        # print(f">>> DEBUG: Number of params being trained: {num_trainable}")
+        # if num_trainable == 0:
+        #     raise ValueError("FATAL: None param is being trained")
 
-        wd_svd = cfg.get('weight_decay_normal', 0.0005)
-
-        opt_groups = [
-            {'params': params_svd, 'svd': True, 'thres': cfg.get('thres', 0.995),
-             'weight_decay': wd_svd, 'lr': cfg.get('lr', 0.0005)},
-            {'params': params_normal, 'svd': False,
-             'weight_decay': wd_svd, 'lr': cfg.get('lr', 0.0005)}
-        ]
-
-        optimizer = Adam(opt_groups, lr=cfg.get('lr', 0.0005))
-
-        if t > 0:
-            print(">> [Stage 1] Calculating Drift-Resistant Space (DRS)...")
-            model.eval()
-            with torch.no_grad():
-                for images_aug, images_raw, _ in train_loader:
-                    _ = model(images_raw.to(device), get_cur_x=True)
-
-            fea_in = model.extract_fea_in(device)
-            optimizer.get_eigens(fea_in)
-            optimizer.get_transforms()
-            print(">> [Stage 1] Completed. Projection Matrices built.")
-
-        print(">> [Stage 2] Training LoRA with Adaptive Triplet Loss...")
+        print(">> [Stage 1] Training LoRA with Text Anchors...")
         model.train()
         total_steps = cfg['epochs_per_task'] * len(train_loader)
         scheduler = (torch.optim.lr_scheduler
@@ -197,18 +182,31 @@ def main(cfg):
             for images_aug, _, labels in train_loader:
                 images_aug, labels = images_aug.to(device), labels.to(device)
 
-                with torch.no_grad():
-                    base_cls = model.image_encoder(images_aug, task=-1)
-                    base_emb = torch.nn.functional.normalize(base_cls, p=2, dim=1)
-
                 emb = model(images_aug)
                 pos = anchors_tensor[labels]
                 loss_anc = (1.0 - (emb * pos).sum(dim=1)).mean()
 
-                loss_kd = (1.0 - (emb * base_emb).sum(dim=1)).mean()
+                loss_triplet = adaptive_margin_triplet_loss_seen_negs(
+                    emb, pos, labels, anchors_tensor, seen_inds, base_margin=0.1
+                )
 
-                alpha_kd = cfg.get('lambda_kd', 2.0)
-                loss = loss_anc + alpha_kd * loss_kd
+                old_indices = [idx for idx in seen_inds if idx not in cur_inds]
+                if len(old_indices) > 0:
+                    with torch.no_grad():
+                        prev_task_id = model.num_task - 2
+                        if prev_task_id < 0:
+                            prev_cls = model.image_encoder(images_aug, task=-1, get_cur_x=False)
+                        else:
+                            prev_cls = model.image_encoder(images_aug, task=prev_task_id, get_cur_x=False)
+                        prev_emb = torch.nn.functional.normalize(prev_cls, p=2, dim=1)
+
+                    old_anchor_matrix = anchors_tensor[old_indices].to(device)
+                    loss_d = semantic_distance_loss(emb, prev_emb, old_anchor_matrix)
+                else:
+                    loss_d = torch.tensor(0.0, device=device)
+
+                beta = cfg.get('lambda_kd', 4.0)
+                loss = loss_anc + loss_triplet + beta * loss_d
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -221,9 +219,15 @@ def main(cfg):
                 pbar.set_postfix({"Loss": f"{loss.item():.3f}"})
         pbar.close()
 
-        print(">> Building drift-compensation Prototypes...")
-        model.build_prototypes(train_loader, class_inds, device)
-        model.train()
+        print(f">> [Stage 2] Calculating Null-Space to protect Task 0 to {t}...")
+        model.eval()
+        with torch.no_grad():
+            for images_aug, images_raw, _ in train_loader:
+                _ = model(images_raw.to(device), get_cur_x=True)
+
+        fea_in = model.extract_fea_in(device)
+        optimizer.update_null_space(fea_in)
+        print(">> [Stage 2] Null-Space Shield Activated")
 
         task_accs = []
         for i in range(t + 1):
