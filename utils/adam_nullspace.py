@@ -16,15 +16,15 @@ class Adam_NullSpace(Optimizer):
 
         for group in self.param_groups:
             svd = group['svd']
-            for p in group['params']:
+            for i, p in enumerate(group['params']):
                 if p.grad is None:
                     continue
                 grad = p.grad.data
 
                 update = self.get_update(group, grad, p)
 
-                if svd and p in self.projectors:
-                    update_ = torch.mm(update, self.projectors[p])
+                if svd and i in self.projectors:
+                    update_ = torch.mm(update, self.projectors[i])
                 else:
                     update_ = update
 
@@ -36,16 +36,16 @@ class Adam_NullSpace(Optimizer):
             if not group['svd']:
                 continue
             thres = group['thres']
-            for p in group['params']:
+            for i, p in enumerate(group['params']):
                 if not p.requires_grad:
                     continue
 
-                if p not in self.covariances:
-                    self.covariances[p] = fea_in[p].clone().to(p.device)
+                if i not in self.covariances:
+                    self.covariances[i] = fea_in[p].clone().to(p.device)
                 else:
-                    self.covariances[p] += fea_in[p].to(p.device)
+                    self.covariances[i] += fea_in[p].to(p.device)
 
-                _, S, V = torch.svd(self.covariances[p])
+                _, S, V = torch.svd(self.covariances[i])
 
                 cumulative_sum = S.cumsum(dim=0) / S.sum()
                 idxs = (cumulative_sum >= thres).nonzero(as_tuple=True)[0]
@@ -55,7 +55,7 @@ class Adam_NullSpace(Optimizer):
                 identity = torch.eye(basis.shape[0], device=basis.device)
                 P = identity - torch.mm(basis, basis.transpose(1, 0))
 
-                self.projectors[p] = P.detach()
+                self.projectors[i] = P.detach()
                 print(f"      -> Lock {num_vectors}/{S.shape[0]} dims space for this param")
 
     def get_update(self, group, grad, p):

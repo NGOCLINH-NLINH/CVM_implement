@@ -137,15 +137,8 @@ def main(cfg):
 
     task_classes_list = []
 
-    params_svd = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_A' in n]
-    params_normal = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_B' in n]
-    wd_svd = cfg.get('weight_decay_normal', 0.0005)
-
-    opt_groups = [
-        {'params': params_svd, 'svd': True, 'thres': cfg.get('thres', 0.98), 'weight_decay': wd_svd},
-        {'params': params_normal, 'svd': False, 'weight_decay': wd_svd}
-    ]
-    optimizer = Adam_NullSpace(opt_groups, lr=cfg.get('lr', 0.0005))
+    global_covariances = {}
+    global_projectors = {}
 
     for t, (train_loader, test_loader, class_inds) in enumerate(tasks):
         task_classes_list.append(class_inds)
@@ -157,11 +150,18 @@ def main(cfg):
         model.update_task()
         model.freeze_for_task()
 
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = cfg.get('lr', 0.0005)
-        for state in optimizer.state.values():
-            if 'exp_avg' in state: state['exp_avg'].zero_()
-            if 'exp_avg_sq' in state: state['exp_avg_sq'].zero_()
+        params_svd = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_A' in n]
+        params_normal = [p for n, p in model.named_parameters() if p.requires_grad and 'lora_B' in n]
+        wd_svd = cfg.get('weight_decay_normal', 0.0005)
+
+        opt_groups = [
+            {'params': params_svd, 'svd': True, 'thres': cfg.get('thres', 0.98), 'weight_decay': wd_svd},
+            {'params': params_normal, 'svd': False, 'weight_decay': wd_svd}
+        ]
+
+        optimizer = Adam_NullSpace(opt_groups, lr=cfg.get('lr', 0.0005))
+        optimizer.covariances = global_covariances
+        optimizer.projectors = global_projectors
 
         # trainable_params = [p for n, p in model.named_parameters() if p.requires_grad]
         # num_trainable = sum(p.numel() for p in trainable_params)
