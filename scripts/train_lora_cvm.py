@@ -163,6 +163,13 @@ def main(cfg):
         optimizer.covariances = global_covariances
         optimizer.projectors = global_projectors
 
+        if t > 0:
+            for group in optimizer.param_groups:
+                if group['svd']:
+                    for i, p in enumerate(group['params']):
+                        if i in optimizer.projectors:
+                            p.data = torch.mm(p.data, optimizer.projectors[i].to(p.device))
+
         # trainable_params = [p for n, p in model.named_parameters() if p.requires_grad]
         # num_trainable = sum(p.numel() for p in trainable_params)
         # print(f">>> DEBUG: Number of params being trained: {num_trainable}")
