@@ -183,8 +183,7 @@ def main(cfg):
     anchor_keys, anchors_tensor = load_anchors(cfg['anchors_path'], device=device)
     print("Loaded anchors:", len(anchor_keys))
 
-    # model
-    model = ResNetCVM(out_dim=cfg['out_dim'], pretrained=cfg.get('pretrained_backbone', False)).to(device)
+    model = ResNetCVM(out_dim=cfg['out_dim'], pretrained=cfg.get('pretrained_backbone', False), sparsity_ratio=cfg['sparsity_ratio']).to(device)
     prev_model = None
 
     buffer = ReservoirBuffer(capacity=cfg['memory_size'])

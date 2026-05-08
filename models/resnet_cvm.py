@@ -5,11 +5,11 @@ import torch.nn.functional as F
 
 
 class ResNetCVM(nn.Module):
-    def __init__(self, out_dim=384, pretrained=False, sparsity_ratio=0.15):
+    def __init__(self, out_dim=384, pretrained=False, sparsity_ratio=0.40):
         super().__init__()
         base = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1) if pretrained else models.resnet18(
             weights=None)
-        self.features = nn.Sequential(*list(base.children())[:-2])  # conv..layer4
+        self.features = nn.Sequential(*list(base.children())[:-2])
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(512, out_dim)
         nn.init.normal_(self.fc.weight, 0, 0.01)
@@ -22,7 +22,7 @@ class ResNetCVM(nn.Module):
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
 
-        if self.training and self.sparsity_ratio < 1.0:
+        if self.sparsity_ratio < 1.0:
             k = max(1, int(x.size(1) * self.sparsity_ratio))
             val, idx = torch.topk(x, k, dim=1)
             sparse_x = torch.zeros_like(x).scatter_(1, idx, val)
