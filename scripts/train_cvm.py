@@ -333,7 +333,7 @@ def main(cfg):
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
                 optimizer.step()
-                # buffer.add_batch(raw_images, labels)
+                buffer.add_batch(raw_images, labels)
 
                 pbar.update(1)
                 pbar.set_postfix({"Loss": f"{loss.item():.3f}"})
@@ -341,9 +341,9 @@ def main(cfg):
             scheduler.step()
         pbar.close()
 
-        print(">> Updating Replay Buffer...")
-        for _, raw_images, labels in train_loader:
-            buffer.add_batch(raw_images, labels)
+        # print(">> Updating Replay Buffer...")
+        # for _, raw_images, labels in train_loader:
+        #     buffer.add_batch(raw_images, labels)
 
         prev_model = copy.deepcopy(model).eval().to(device)
 
