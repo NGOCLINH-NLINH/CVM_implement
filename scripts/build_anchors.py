@@ -29,8 +29,8 @@ def build_anchors(labels_file, out_path, model_name='sentence-transformers/all-M
         anchors[lbl] = vec
 
     mat = np.array(list(anchors.values()))
-    mean_vec = np.mean(mat, axis=0)
-    mat = mat - mean_vec
+    # mean_vec = np.mean(mat, axis=0)
+    # mat = mat - mean_vec
     mat = mat / np.linalg.norm(mat, axis=1, keepdims=True)
 
     for i, lbl in enumerate(anchors.keys()):
