@@ -156,12 +156,12 @@ def main(cfg):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Device:", device)
 
-    print(f"\n{'=' * 50}")
-    print(f"EXPERIMENT: {cfg['exp_name']} | SEED: {cfg['seed']}")
-    print(
-        f"PARAMS: Beta={cfg['beta']}, Spread={cfg['spread_lambda']}, Adaptive={cfg['adaptive_margin']}, Margin={cfg['margin']}")
-    print(f"DEVICE: {device}")
-    print(f"{'=' * 50}\n")
+    # print(f"\n{'=' * 50}")
+    # print(f"EXPERIMENT: {cfg['exp_name']} | SEED: {cfg['seed']}")
+    # print(
+    #     f"PARAMS: Beta={cfg['beta']}, Spread={cfg['spread_lambda']}, Adaptive={cfg['adaptive_margin']}, Margin={cfg['margin']}")
+    # print(f"DEVICE: {device}")
+    # print(f"{'=' * 50}\n")
 
     # tasks
     tasks, class_names = make_cifar100_tasks(cfg['num_tasks'], cfg['batch_size'], augment=True)
@@ -288,12 +288,6 @@ def main(cfg):
                     else:
                         Lm = triplet_loss_k_negs(emb, pos, neg_k_tensor, margin=cfg['margin'])
 
-                    if cfg['spread_lambda'] > 0:
-                        L_spread = image_side_prototype_spread_loss(emb, labels_cuda, anchors_tensor, seen_inds,
-                                                                    delta=cfg['spread_delta'])
-                    else:
-                        L_spread = torch.tensor(0.0, device=device)
-
                     if old_anchor_mat is not None and cfg['beta'] > 0:
                         with torch.no_grad():
                             emb_prev = prev_model(images_cuda)
@@ -301,7 +295,7 @@ def main(cfg):
                     else:
                         Ld = torch.tensor(0.0, device=device)
 
-                    loss = Lm + cfg['beta'] * Ld + cfg['spread_lambda'] * L_spread
+                    loss = Lm + cfg['beta'] * Ld
 
                     if t > 0 and len(buffer) > 0 and cfg['replay_batch'] > 0 and cfg['replay_on']:
                         buf_imgs_raw, buf_labels = buffer.sample(cfg['replay_batch'])
@@ -315,20 +309,13 @@ def main(cfg):
                             Lm_buf = triplet_loss_seen_negs(emb_buf, pos_buf, buf_labels, anchors_tensor, seen_inds,
                                                             margin=cfg['margin'])
 
-                            if cfg['spread_lambda'] > 0:
-                                L_spread_buf = image_side_prototype_spread_loss(emb_buf, buf_labels, anchors_tensor,
-                                                                                seen_inds, delta=cfg['spread_delta'])
-                            else:
-                                L_spread_buf = torch.tensor(0.0, device=device)
-
                             Ld_buf = torch.tensor(0.0, device=device)
                             if old_anchor_mat is not None and cfg['beta'] > 0:
                                 with torch.no_grad():
                                     emb_prev_buf = prev_model(buf_imgs_aug)
                                 Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
 
-                            loss += cfg['replay_lambda'] * (
-                                        Lm_buf + cfg['beta'] * Ld_buf + cfg['spread_lambda'] * L_spread_buf)
+                            loss += cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf)
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -350,9 +337,9 @@ def main(cfg):
         seen_acc_history.append(acc_all_seen)
         print(f"Acc on all seen classes after task {t}: {acc_all_seen:.4f}")
 
-        lp_acc = linear_probe_all(model, train_full, test_full, seen_inds, device, cfg['out_dim'])
-        linear_probe_history.append(lp_acc)
-        print(f"Linear probe acc on seen classes after task {t}: {lp_acc:.4f}")
+        # lp_acc = linear_probe_all(model, train_full, test_full, seen_inds, device, cfg['out_dim'])
+        # linear_probe_history.append(lp_acc)
+        # print(f"Linear probe acc on seen classes after task {t}: {lp_acc:.4f}")
 
         unseen_inds = [i for i in range(len(anchor_keys)) if i not in seen_inds]
         zs = zero_shot_eval(model, anchors_tensor, unseen_inds, test_full, device)
@@ -367,6 +354,7 @@ def main(cfg):
                 acc_old_task = evaluate_task_full_anchors(model, test_full, t_classes, anchors_tensor, anchor_keys,
                                                           device)
                 per_task_accs.append(acc_old_task)
+                print(f"  -> Acc on Task {i_task} (Classes {min(t_classes)}-{max(t_classes)}): {acc_old_task:.4f}")
         eval_history.append(per_task_accs)
 
     fw_score, _ = compute_forgetting(eval_history)
@@ -376,80 +364,43 @@ def main(cfg):
     print(f"Avg Accuracy: {avg_acc_final:.4f}")
     print(f"Forgetting: {fw_score:.4f}")
 
-    results = {
-        "exp_name": cfg['exp_name'],
-        "seed": cfg['seed'],
-        "config": {
-            "beta": cfg['beta'],
-            "spread_lambda": cfg['spread_lambda'],
-            "margin": cfg['margin'],
-            "adaptive_margin": cfg['adaptive_margin'],
-            "memory_size": cfg['memory_size']
-        },
-        "seen_acc_history": [float(x) for x in seen_acc_history],
-        "linear_probe_history": [float(x) for x in linear_probe_history],
-        "zero_shot_history": [float(x) for x in zero_shot_history],
-
-        "avg_acc_over_time": float(avg_acc_final),
-        "forgetting": float(fw_score),
-        "eval_matrix": [[float(x) if x is not None else None for x in row] for row in eval_history]
-    }
-
-    log_filename = f"log_{cfg['exp_name']}_seed{cfg['seed']}.json"
-    log_path = os.path.join(cfg['checkpoints_dir'], log_filename)
-
-    with open(log_path, 'w') as f:
-        json.dump(results, f, indent=4)
-
-    print(f"Saved detailed logs to: {log_path}")
+    # results = {
+    #     "exp_name": cfg['exp_name'],
+    #     "seed": cfg['seed'],
+    #     "config": {
+    #         "beta": cfg['beta'],
+    #         "spread_lambda": cfg['spread_lambda'],
+    #         "margin": cfg['margin'],
+    #         "adaptive_margin": cfg['adaptive_margin'],
+    #         "memory_size": cfg['memory_size']
+    #     },
+    #     "seen_acc_history": [float(x) for x in seen_acc_history],
+    #     "linear_probe_history": [float(x) for x in linear_probe_history],
+    #     "zero_shot_history": [float(x) for x in zero_shot_history],
+    #
+    #     "avg_acc_over_time": float(avg_acc_final),
+    #     "forgetting": float(fw_score),
+    #     "eval_matrix": [[float(x) if x is not None else None for x in row] for row in eval_history]
+    # }
+    #
+    # log_filename = f"log_{cfg['exp_name']}_seed{cfg['seed']}.json"
+    # log_path = os.path.join(cfg['checkpoints_dir'], log_filename)
+    #
+    # with open(log_path, 'w') as f:
+    #     json.dump(results, f, indent=4)
+    #
+    # print(f"Saved detailed logs to: {log_path}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default='configs/cifar100_config.yaml')
-    parser.add_argument('--exp-name', type=str, default='default')
-    parser.add_argument('--seed', type=int, default=None)
-    parser.add_argument('--anchors-path', type=str, default=None)
-    parser.add_argument('--beta', type=float, default=None)
-    parser.add_argument('--spread-lambda', type=float, default=None)
-    parser.add_argument('--margin', type=float, default=None)
-    parser.add_argument('--memory-size', type=int, default=None)
-    parser.add_argument('--no-adaptive', action='store_true')
-    parser.add_argument('--original-cvm', action='store_true', help='Use original CVM paper logic')
-
+    parser.add_argument('--exp-name', type=str, default='LoRA_ACVM')
     args = parser.parse_args()
 
-    # Load YAML
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
 
     cfg['exp_name'] = args.exp_name
 
-    if args.seed is not None: cfg['seed'] = args.seed
-    if args.anchors_path: cfg['anchors_path'] = args.anchors_path
-
-    if args.beta is not None: cfg['beta'] = args.beta
-    if args.spread_lambda is not None: cfg['spread_lambda'] = args.spread_lambda
-    if args.margin is not None: cfg['margin'] = args.margin
-    if args.memory_size is not None: cfg['memory_size'] = args.memory_size
-
-    if args.no_adaptive:
-        cfg['adaptive_margin'] = False
-    else:
-        cfg.setdefault('adaptive_margin', True)
-
-    cfg['lr'] = float(cfg['lr'])
-    cfg['momentum'] = float(cfg['momentum'])
-    cfg['weight_decay'] = float(cfg['weight_decay'])
-    cfg['batch_size'] = int(cfg['batch_size'])
-
-    cfg['margin'] = float(cfg['margin'])
-    cfg['beta'] = float(cfg['beta'])
-    cfg['spread_lambda'] = float(cfg['spread_lambda'])
-    cfg['spread_delta'] = float(cfg['spread_delta'])
-    cfg['replay_lambda'] = float(cfg['replay_lambda'])
-    cfg['original_cvm'] = args.original_cvm
-
-    mode_name = "ORIGINAL CVM" if cfg['original_cvm'] else "ACVM"
-    print(f"\nSTARTING EXPERIMENT MODE: {mode_name}")
     main(cfg)
