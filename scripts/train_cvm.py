@@ -300,21 +300,34 @@ def main(cfg):
                         buf_imgs_raw, buf_labels = buffer.sample(cfg['replay_batch'])
                         if buf_imgs_raw is not None:
                             buf_imgs_raw = buf_imgs_raw.to(device)
-                            buf_labels = buf_labels.to(device)
                             buf_imgs_aug = replay_transform(buf_imgs_raw)
                             emb_buf = model(buf_imgs_aug)
-                            pos_buf = anchors_tensor[buf_labels].to(device)
 
-                            Lm_buf = triplet_loss_seen_negs(emb_buf, pos_buf, buf_labels, anchors_tensor, seen_inds,
-                                                            margin=cfg['margin'])
-
-                            Ld_buf = torch.tensor(0.0, device=device)
-                            if old_anchor_mat is not None and cfg['beta'] > 0:
+                            L_replay_sarl = torch.tensor(0.0, device=device)
+                            if prev_model is not None:
                                 with torch.no_grad():
                                     emb_prev_buf = prev_model(buf_imgs_aug)
-                                Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
+                                L_replay_sarl = torch.nn.functional.mse_loss(emb_buf, emb_prev_buf)
 
-                            loss += cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf)
+                            loss += cfg['replay_lambda'] * L_replay_sarl
+                        # buf_imgs_raw, buf_labels = buffer.sample(cfg['replay_batch'])
+                        # if buf_imgs_raw is not None:
+                        #     buf_imgs_raw = buf_imgs_raw.to(device)
+                        #     buf_labels = buf_labels.to(device)
+                        #     buf_imgs_aug = replay_transform(buf_imgs_raw)
+                        #     emb_buf = model(buf_imgs_aug)
+                        #     pos_buf = anchors_tensor[buf_labels].to(device)
+                        #
+                        #     Lm_buf = triplet_loss_seen_negs(emb_buf, pos_buf, buf_labels, anchors_tensor, seen_inds,
+                        #                                     margin=cfg['margin'])
+                        #
+                        #     Ld_buf = torch.tensor(0.0, device=device)
+                        #     if old_anchor_mat is not None and cfg['beta'] > 0:
+                        #         with torch.no_grad():
+                        #             emb_prev_buf = prev_model(buf_imgs_aug)
+                        #         Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
+                        #
+                        #     loss += cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf)
 
                 optimizer.zero_grad()
                 loss.backward()
