@@ -16,6 +16,7 @@ class ResNetCVM(nn.Module):
         nn.init.zeros_(self.fc.bias)
 
         self.sparsity_ratio = sparsity_ratio
+        self.leak = leak
 
     def forward(self, x):
         x = self.features(x)
