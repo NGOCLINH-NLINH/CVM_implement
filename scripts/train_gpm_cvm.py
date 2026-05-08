@@ -400,6 +400,7 @@ def main(cfg):
                 acc_old_task = evaluate_task_full_anchors(model, test_full, t_classes, anchors_tensor, anchor_keys,
                                                           device)
                 per_task_accs.append(acc_old_task)
+                print(f"  -> Acc on Task {i_task} (Classes {min(t_classes)}-{max(t_classes)}): {acc_old_task:.4f}")
         eval_history.append(per_task_accs)
 
     fw_score, _ = compute_forgetting(eval_history)
