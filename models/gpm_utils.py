@@ -11,17 +11,6 @@ def get_conv_modules(model):
     return conv_modules
 
 
-def register_hooks(conv_modules):
-    hooks = []
-
-    def hook(module, input, output):
-        module.act = input[0].detach()
-
-    for name, module in conv_modules:
-        hooks.append(module.register_forward_hook(hook))
-    return hooks
-
-
 def get_representation_matrix(model, conv_modules, device, train_loader, num_samples=128):
     model.eval()
     example_data = []
@@ -33,6 +22,13 @@ def get_representation_matrix(model, conv_modules, device, train_loader, num_sam
         if samples_collected >= num_samples:
             break
     example_data = torch.cat(example_data, dim=0)[:num_samples].to(device)
+
+    handles = []
+
+    def hook(module, input, output):
+        module.act = input[0].detach()
+    for name, module in conv_modules:
+        handles.append(module.register_forward_hook(hook))
 
     with torch.no_grad():
         _ = model(example_data)
@@ -52,6 +48,9 @@ def get_representation_matrix(model, conv_modules, device, train_loader, num_sam
         mat_list.append(mat.T)
 
         module.act = None
+
+    for handle in handles:
+        handle.remove()
 
     return mat_list
 

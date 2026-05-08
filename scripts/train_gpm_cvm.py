@@ -20,7 +20,7 @@ import random
 from tqdm import tqdm
 
 from models.resnet_cvm import ResNetCVM
-from models.gpm_utils import get_conv_modules, register_hooks, get_representation_matrix, update_GPM
+from models.gpm_utils import get_conv_modules, get_representation_matrix, update_GPM
 from utils.utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, \
     set_seed, triplet_loss_k_negs, triplet_loss_seen_negs, image_side_prototype_spread_loss, \
     adaptive_margin_triplet_loss_k_negs
@@ -200,7 +200,6 @@ def main(cfg):
     Path(cfg['checkpoints_dir']).mkdir(parents=True, exist_ok=True)
 
     conv_modules = get_conv_modules(model)
-    _ = register_hooks(conv_modules)
     feature_list = []
     feature_mat = []
     gpm_threshold = cfg.get('threshold', 0.97)
