@@ -159,8 +159,8 @@ def main(cfg):
 
     print(f"\n{'=' * 50}")
     print(f"EXPERIMENT: {cfg['exp_name']} | SEED: {cfg['seed']}")
-    print(
-        f"PARAMS: Beta={cfg['beta']}, Spread={cfg['spread_lambda']}, Adaptive={cfg['adaptive_margin']}, Margin={cfg['margin']}")
+    # print(
+    #     f"PARAMS: Beta={cfg['beta']}, Spread={cfg['spread_lambda']}, Adaptive={cfg['adaptive_margin']}, Margin={cfg['margin']}")
     print(f"DEVICE: {device}")
     print(f"{'=' * 50}\n")
 
@@ -322,11 +322,11 @@ def main(cfg):
                             Lm_buf = triplet_loss_seen_negs(emb_buf, pos_buf, buf_labels, anchors_tensor, seen_inds,
                                                             margin=cfg['margin'])
 
-                            if cfg['spread_lambda'] > 0:
-                                L_spread_buf = image_side_prototype_spread_loss(emb_buf, buf_labels, anchors_tensor,
-                                                                                seen_inds, delta=cfg['spread_delta'])
-                            else:
-                                L_spread_buf = torch.tensor(0.0, device=device)
+                            # if cfg['spread_lambda'] > 0:
+                            #     L_spread_buf = image_side_prototype_spread_loss(emb_buf, buf_labels, anchors_tensor,
+                            #                                                     seen_inds, delta=cfg['spread_delta'])
+                            # else:
+                            #     L_spread_buf = torch.tensor(0.0, device=device)
 
                             Ld_buf = torch.tensor(0.0, device=device)
                             if old_anchor_mat is not None and cfg['beta'] > 0:
@@ -334,8 +334,9 @@ def main(cfg):
                                     emb_prev_buf = prev_model(buf_imgs_aug)
                                 Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
 
-                            loss += cfg['replay_lambda'] * (
-                                        Lm_buf + cfg['beta'] * Ld_buf + cfg['spread_lambda'] * L_spread_buf)
+                            # loss += cfg['replay_lambda'] * (
+                            #             Lm_buf + cfg['beta'] * Ld_buf + cfg['spread_lambda'] * L_spread_buf)
+                            loss += cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf)
 
                 optimizer.zero_grad()
                 loss.backward()
