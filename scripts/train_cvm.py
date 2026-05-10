@@ -328,10 +328,10 @@ def main(cfg):
                                     emb_prev_buf = prev_model(buf_imgs_aug)
                                 Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
 
-                            decay_factor = 1.0 / (1.0 + 0.15 * t)
-                            cur_lambda = cfg['replay_lambda'] * decay_factor
-                            cur_beta = cfg.get('beta', 0.0) * decay_factor
-                            loss += cur_lambda * (Lm_buf + cur_beta * Ld_buf)
+                            # decay_factor = 1.0 / (1.0 + 0.15 * t)
+                            # cur_lambda = cfg['replay_lambda'] * decay_factor
+                            # cur_beta = cfg.get('beta', 0.0) * decay_factor
+                            loss += cfg['replay_lambda'] * (Lm_buf + cur_beta * Ld_buf)
 
                             # loss += cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf)
 
