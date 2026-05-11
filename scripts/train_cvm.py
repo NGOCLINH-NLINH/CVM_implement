@@ -287,15 +287,15 @@ def main(cfg):
                     else:
                         Lm = triplet_loss_k_negs(emb, pos, neg_k_tensor, margin=cfg['margin'])
 
-                    if old_anchor_mat is not None and cfg['beta'] > 0:
-                        with torch.no_grad():
-                            emb_prev = prev_model(images_cuda)
-                        Ld = semantic_distance_loss(emb, emb_prev, old_anchor_mat)
-                    else:
-                        Ld = torch.tensor(0.0, device=device)
-
-                    loss = Lm + cfg['beta'] * Ld
-                    # loss = Lm
+                    # if old_anchor_mat is not None and cfg['beta'] > 0:
+                    #     with torch.no_grad():
+                    #         emb_prev = prev_model(images_cuda)
+                    #     Ld = semantic_distance_loss(emb, emb_prev, old_anchor_mat)
+                    # else:
+                    #     Ld = torch.tensor(0.0, device=device)
+                    #
+                    # loss = Lm + cfg['beta'] * Ld
+                    loss = Lm
 
                     if t > 0 and len(buffer) > 0 and cfg['replay_batch'] > 0 and cfg['replay_on']:
                         buf_imgs_raw, buf_labels = buffer.sample(cfg['replay_batch'])
