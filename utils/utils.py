@@ -298,3 +298,13 @@ def adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k, base_margin=0.1, reduct
 #         test_loader = DataLoader(test_subset, batch_size=batch_size, shuffle=False, num_workers=2)
 #         tasks.append((train_loader, test_loader, list(range(start, end))))
 #     return tasks, classes
+
+def get_semantic_mask(batch_anchors, hash_mat, sparsity=0.4):
+    h = torch.matmul(batch_anchors, hash_mat)
+    k = max(1, int(512 * sparsity))
+    _, idx = torch.topk(h, k, dim=-1)
+    mask = torch.zeros_like(h)
+    mask.scatter_(-1, idx, 1.0)
+
+    batch_mask, _ = torch.max(mask, dim=0)
+    return batch_mask

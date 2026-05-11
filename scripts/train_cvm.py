@@ -22,7 +22,7 @@ from tqdm import tqdm
 from models.resnet_cvm import ResNetCVM
 from utils.utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, \
     set_seed, triplet_loss_k_negs, triplet_loss_seen_negs, image_side_prototype_spread_loss, \
-    adaptive_margin_triplet_loss_k_negs
+    adaptive_margin_triplet_loss_k_negs, get_semantic_mask
 
 replay_transform = transforms.Compose([
     transforms.RandomCrop(32, padding=4),
@@ -154,6 +154,7 @@ def compute_forgetting(eval_history):
 def main(cfg):
     set_seed(cfg.get('seed', 1234))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    hash_matrix = torch.randn(384, 512, device=device)
     print("Device:", device)
 
     # print(f"\n{'=' * 50}")
@@ -337,6 +338,13 @@ def main(cfg):
 
                 optimizer.zero_grad()
                 loss.backward()
+
+                with torch.no_grad():
+                    unique_labels = labels.unique()
+                    batch_anchors = anchors_tensor[unique_labels]
+                    sgm_mask = get_semantic_mask(batch_anchors, hash_matrix, sparsity=0.4)
+                    model.fc.weight.grad *= sgm_mask.unsqueeze(0)
+
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
                 optimizer.step()
                 buffer.add_batch(raw_images, labels)
