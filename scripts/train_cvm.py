@@ -342,7 +342,7 @@ def main(cfg):
                 with torch.no_grad():
                     unique_labels = labels.unique()
                     batch_anchors = anchors_tensor[unique_labels]
-                    sgm_mask = get_semantic_mask(batch_anchors, hash_matrix, sparsity=0.4)
+                    sgm_mask = get_semantic_mask(batch_anchors, hash_matrix, sparsity=cfg.get('sparsity_mask', 0.40))
                     model.fc.weight.grad *= sgm_mask.unsqueeze(0)
 
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
