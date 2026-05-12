@@ -274,14 +274,15 @@ def main(cfg):
 
                         neg_tensor_buf = anchors_tensor[torch.tensor(neg_idx_list_buf, dtype=torch.long, device=device)]
                         Lm_buf = triplet_loss_emb(emb_buf, pos_buf, neg_tensor_buf, margin=cfg['margin'])
+                        loss += cfg['replay_lambda'] * Lm_buf
 
-                        Ld_buf = torch.tensor(0.0, device=device)
-                        if old_anchor_mat is not None and cfg['beta'] > 0:
-                            with torch.no_grad():
-                                emb_prev_buf = prev_model(buf_imgs_aug)
-                            Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
+                        # Ld_buf = torch.tensor(0.0, device=device)
+                        # if old_anchor_mat is not None and cfg['beta'] > 0:
+                        #     with torch.no_grad():
+                        #         emb_prev_buf = prev_model(buf_imgs_aug)
+                        #     Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
 
-                        loss += cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf)
+                        # loss += cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf)
 
                 else:
                     neg_idx_list = []
