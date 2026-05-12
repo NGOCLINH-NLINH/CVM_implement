@@ -302,15 +302,15 @@ def main(cfg):
                         # Lm = triplet_loss_k_negs(emb, pos, neg_k_tensor, margin=cfg['margin'])
                         Lm = triplet_loss_seen_negs(emb, pos, labels_cuda, anchors_tensor, seen_inds, margin=cfg['margin'])
 
-                    # if old_anchor_mat is not None and cfg['beta'] > 0:
-                    #     with torch.no_grad():
-                    #         emb_prev = prev_model(images_cuda)
-                    #     Ld = semantic_distance_loss(emb, emb_prev, old_anchor_mat)
-                    # else:
-                    #     Ld = torch.tensor(0.0, device=device)
+                    if old_anchor_mat is not None and cfg['beta'] > 0:
+                        with torch.no_grad():
+                            emb_prev = prev_model(images_cuda)
+                        Ld = semantic_distance_loss(emb, emb_prev, old_anchor_mat)
+                    else:
+                        Ld = torch.tensor(0.0, device=device)
 
-                    # loss = Lm + cfg['beta'] * Ld
-                    loss = Lm
+                    loss = Lm + cfg['beta'] * Ld
+                    # loss = Lm
 
                     if has_buffer:
                         Lm_buf = triplet_loss_seen_negs(emb_buf, pos_buf, buf_labels, anchors_tensor, seen_inds,
