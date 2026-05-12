@@ -286,11 +286,11 @@ def main(cfg):
 
                     if cfg['adaptive_margin']:
                         # Lm = adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k_tensor, base_margin=cfg['margin'])
-                        Lm = adaptive_margin_triplet_loss_seen_negs(emb, pos, labels, anchors_tensor, seen_inds,
+                        Lm = adaptive_margin_triplet_loss_seen_negs(emb, pos, labels_cuda, anchors_tensor, seen_inds,
                                                                     base_margin=cfg['margin'])
                     else:
                         # Lm = triplet_loss_k_negs(emb, pos, neg_k_tensor, margin=cfg['margin'])
-                        Lm = triplet_loss_seen_negs(emb, pos, labels, anchors_tensor, seen_inds, margin=cfg['margin'])
+                        Lm = triplet_loss_seen_negs(emb, pos, labels_cuda, anchors_tensor, seen_inds, margin=cfg['margin'])
 
                     if old_anchor_mat is not None and cfg['beta'] > 0:
                         with torch.no_grad():
