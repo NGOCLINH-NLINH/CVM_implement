@@ -22,7 +22,7 @@ from tqdm import tqdm
 from models.resnet_cvm import ResNetCVM
 from utils.utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, \
     set_seed, triplet_loss_k_negs, triplet_loss_seen_negs, image_side_prototype_spread_loss, \
-    adaptive_margin_triplet_loss_k_negs, get_semantic_mask
+    adaptive_margin_triplet_loss_k_negs, get_semantic_mask, adaptive_margin_triplet_loss_seen_negs
 
 replay_transform = transforms.Compose([
     transforms.RandomCrop(32, padding=4),
@@ -274,20 +274,23 @@ def main(cfg):
                             loss += cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf)
 
                 else:
-                    neg_idx_list = []
-                    for lbl in labels.numpy():
-                        choices = [c for c in seen_inds if c != lbl]
-                        if len(choices) >= K:
-                            negs = random.sample(choices, k=K)
-                        else:
-                            negs = random.choices(choices, k=K)
-                        neg_idx_list.append(negs)
-                    neg_k_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
+                    # neg_idx_list = []
+                    # for lbl in labels.numpy():
+                    #     choices = [c for c in seen_inds if c != lbl]
+                    #     if len(choices) >= K:
+                    #         negs = random.sample(choices, k=K)
+                    #     else:
+                    #         negs = random.choices(choices, k=K)
+                    #     neg_idx_list.append(negs)
+                    # neg_k_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
 
                     if cfg['adaptive_margin']:
-                        Lm = adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k_tensor, base_margin=cfg['margin'])
+                        # Lm = adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k_tensor, base_margin=cfg['margin'])
+                        Lm = adaptive_margin_triplet_loss_seen_negs(emb, pos, labels, anchors_tensor, seen_inds,
+                                                                    base_margin=cfg['margin'])
                     else:
-                        Lm = triplet_loss_k_negs(emb, pos, neg_k_tensor, margin=cfg['margin'])
+                        # Lm = triplet_loss_k_negs(emb, pos, neg_k_tensor, margin=cfg['margin'])
+                        Lm = triplet_loss_seen_negs(emb, pos, labels, anchors_tensor, seen_inds, margin=cfg['margin'])
 
                     if old_anchor_mat is not None and cfg['beta'] > 0:
                         with torch.no_grad():
