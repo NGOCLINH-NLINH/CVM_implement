@@ -248,8 +248,8 @@ def main(cfg):
                 if cfg.get('original_cvm', False):
                     neg_idx_list = []
                     for lbl in labels.numpy():
-                        choices = [c for c in seen_inds if c != lbl]
-                        # choices = [c for c in cur_inds if c != lbl]
+                        # choices = [c for c in seen_inds if c != lbl]
+                        choices = [c for c in cur_inds if c != lbl]
                         neg_idx = random.choice(choices) if len(choices) > 0 else lbl
                         neg_idx_list.append(neg_idx)
 
@@ -268,7 +268,7 @@ def main(cfg):
                     if has_buffer:
                         neg_idx_list_buf = []
                         for lbl in buf_labels_cpu.numpy():
-                            choices = [c for c in seen_inds if c != lbl]
+                            choices = [c for c in cur_inds if c != lbl]
                             neg_idx = random.choice(choices) if len(choices) > 0 else lbl
                             neg_idx_list_buf.append(neg_idx)
 
