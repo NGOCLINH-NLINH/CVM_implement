@@ -7,16 +7,21 @@ import torch.nn.functional as F
 class ResNetCVM(nn.Module):
     def __init__(self, out_dim=384, pretrained=False, sparsity_ratio=0.40, leak=0.05):
         super().__init__()
-        base = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1) if pretrained else models.resnet18(
-            weights=None)
+        # base = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1) if pretrained else models.resnet18(
+        #     weights=None)
+        base = models.resnet18(weights=None)
+        base.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        base.maxpool = nn.Identity()
+
         self.features = nn.Sequential(*list(base.children())[:-2])
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+
         self.fc = nn.Linear(512, out_dim)
         nn.init.normal_(self.fc.weight, 0, 0.01)
         nn.init.zeros_(self.fc.bias)
 
-        self.sparsity_ratio = sparsity_ratio
-        self.leak = leak
+        # self.sparsity_ratio = sparsity_ratio
+        # self.leak = leak
 
     def forward(self, x):
         x = self.features(x)

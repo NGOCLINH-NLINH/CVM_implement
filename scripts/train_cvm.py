@@ -375,7 +375,8 @@ def main(cfg):
         eval_history.append(per_task_accs)
 
     fw_score, _ = compute_forgetting(eval_history)
-    avg_acc_final = np.mean(seen_acc_history)
+    final_task_accs = eval_history[-1]
+    avg_acc_final = np.mean([acc for acc in final_task_accs if acc is not None])
 
     print(f"\n--- FINAL RESULTS (Seed {cfg['seed']}) ---")
     print(f"Avg Accuracy: {avg_acc_final:.4f}")
