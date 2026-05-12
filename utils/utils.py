@@ -172,7 +172,8 @@ def triplet_loss_seen_negs(emb, pos_emb, labels, anchors_tensor, seen_indices, m
 
     loss_mat[mask] = 0.0
 
-    return loss_mat.sum() / emb.size(0)
+    hardest_losses, _ = loss_mat.max(dim=1)
+    return hardest_losses.mean()
 
     # num_negs = anchors_seen.size(0) - 1
     # if num_negs <= 0:
@@ -198,7 +199,9 @@ def adaptive_margin_triplet_loss_seen_negs(emb, pos_emb, labels, anchors_tensor,
     seen_indices_tensor = torch.tensor(seen_indices, device=device).unsqueeze(0)
     mask = (seen_indices_tensor == labels.unsqueeze(1))
     loss_mat[mask] = 0.0
-    return loss_mat.sum() / emb.size(0)
+
+    hardest_losses, _ = loss_mat.max(dim=1)
+    return hardest_losses.mean()
 
     # num_negs = anchors_seen.size(0) - 1
     # if num_negs <= 0:
