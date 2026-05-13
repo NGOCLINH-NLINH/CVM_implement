@@ -232,21 +232,20 @@ def main(cfg):
         old_inds = [i for i in seen_inds]
         seen_inds += cur_inds
 
-        decay_params = []
-        no_decay_params = []
-        for name, param in model.named_parameters():
-            if 'fc' in name:
-                no_decay_params.append(param)
-            else:
-                decay_params.append(param)
+        # decay_params = []
+        # no_decay_params = []
+        # for name, param in model.named_parameters():
+        #     if 'fc' in name:
+        #         no_decay_params.append(param)
+        #     else:
+        #         decay_params.append(param)
+        # optimizer = optim.SGD([
+        #     {'params': decay_params, 'weight_decay': cfg['weight_decay']},
+        #     {'params': no_decay_params, 'weight_decay': 0.0}
+        # ], lr=cfg['lr'], momentum=cfg['momentum'])
 
-        optimizer = optim.SGD([
-            {'params': decay_params, 'weight_decay': cfg['weight_decay']},
-            {'params': no_decay_params, 'weight_decay': 0.0}
-        ], lr=cfg['lr'], momentum=cfg['momentum'])
-
-        # optimizer = optim.SGD(model.parameters(), lr=cfg['lr'], momentum=cfg['momentum'],
-        #                       weight_decay=cfg['weight_decay'])
+        optimizer = optim.SGD(model.parameters(), lr=cfg['lr'], momentum=cfg['momentum'],
+                              weight_decay=cfg['weight_decay'])
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=cfg.get('milestones', [50, 75]), gamma=0.1)
 
         total_steps = cfg['epochs_per_task'] * len(train_loader)
@@ -316,15 +315,15 @@ def main(cfg):
                         neg_tensor_buf = anchors_tensor[torch.tensor(neg_idx_list_buf, dtype=torch.long, device=device)]
                         Lm_buf = triplet_loss_emb(emb_buf, pos_buf, neg_tensor_buf, margin=cfg['margin'])
 
-                        # if old_anchor_mat is not None and cfg['beta'] > 0:
-                        #     with torch.no_grad():
-                        #         emb_prev_buf = prev_model(buf_imgs_aug)
-                        #     Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
-                        # else:
-                        #     Ld_buf = torch.tensor(0.0, device=device)
-                        # loss += cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf)
+                        if old_anchor_mat is not None and cfg['beta'] > 0:
+                            with torch.no_grad():
+                                emb_prev_buf = prev_model(buf_imgs_aug)
+                            Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
+                        else:
+                            Ld_buf = torch.tensor(0.0, device=device)
+                        loss += cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf)
 
-                        loss += cfg['replay_lambda'] * Lm_buf
+                        # loss += cfg['replay_lambda'] * Lm_buf
 
                 else:
                     neg_idx_list = []
