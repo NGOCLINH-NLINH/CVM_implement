@@ -273,8 +273,14 @@ def main(cfg):
                     emb = model(images_cuda)
 
                 if cfg.get('original_cvm', False):
-                    Lm = triplet_loss_hardest_neg(emb, pos, labels_cuda, anchors_tensor, seen_inds,
-                                                  margin=cfg['margin'])
+                    neg_idx_list = []
+                    for lbl in labels_cuda.cpu().numpy():
+                        choices = [c for c in seen_inds if c != lbl]
+                        neg_idx = random.choice(choices) if len(choices) > 0 else lbl
+                        neg_idx_list.append(neg_idx)
+
+                    neg_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
+                    Lm = triplet_loss_emb(emb, pos, neg_tensor, margin=cfg['margin'])
 
                     if old_anchor_mat is not None and cfg['beta'] > 0:
                         with torch.no_grad():
@@ -286,8 +292,14 @@ def main(cfg):
                     loss = Lm + cfg['beta'] * Ld
 
                     if has_buffer:
-                        Lm_buf = triplet_loss_hardest_neg(emb_buf, pos_buf, buf_labels, anchors_tensor, seen_inds,
-                                                          margin=cfg['margin'])
+                        neg_idx_list_buf = []
+                        for lbl in buf_labels.cpu().numpy():
+                            choices = [c for c in seen_inds if c != lbl]
+                            neg_idx = random.choice(choices) if len(choices) > 0 else lbl
+                            neg_idx_list_buf.append(neg_idx)
+
+                        neg_tensor_buf = anchors_tensor[torch.tensor(neg_idx_list_buf, dtype=torch.long, device=device)]
+                        Lm_buf = triplet_loss_emb(emb_buf, pos_buf, neg_tensor_buf, margin=cfg['margin'])
 
                         if old_anchor_mat is not None and cfg['beta'] > 0:
                             with torch.no_grad():
