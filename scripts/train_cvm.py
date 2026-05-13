@@ -254,10 +254,6 @@ def main(cfg):
 
         for epoch in range(cfg['epochs_per_task']):
             model.train()
-            if t > 0:
-                for m in model.modules():
-                    if isinstance(m, nn.BatchNorm2d):
-                        m.eval()
             K = 9
 
             for images, raw_images, labels in train_loader:
