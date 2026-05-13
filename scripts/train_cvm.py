@@ -260,7 +260,7 @@ def main(cfg):
                     if buf_imgs_raw is not None:
                         buf_imgs_raw = buf_imgs_raw.to(device)
                         buf_labels = buf_labels_cpu.to(device)
-                        buf_imgs_aug = replay_transform(buf_imgs_raw)
+                        buf_imgs_aug = torch.stack([replay_transform(img) for img in buf_imgs_raw])
                         pos_buf = anchors_tensor[buf_labels].to(device)
                         combined_images = torch.cat([images_cuda, buf_imgs_aug], dim=0)
                         combined_emb = model(combined_images)
