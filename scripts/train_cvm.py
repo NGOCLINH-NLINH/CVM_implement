@@ -232,8 +232,21 @@ def main(cfg):
         old_inds = [i for i in seen_inds]
         seen_inds += cur_inds
 
-        optimizer = optim.SGD(model.parameters(), lr=cfg['lr'], momentum=cfg['momentum'],
-                              weight_decay=cfg['weight_decay'])
+        decay_params = []
+        no_decay_params = []
+        for name, param in model.named_parameters():
+            if 'fc' in name:
+                no_decay_params.append(param)
+            else:
+                decay_params.append(param)
+
+        optimizer = optim.SGD([
+            {'params': decay_params, 'weight_decay': cfg['weight_decay']},
+            {'params': no_decay_params, 'weight_decay': 0.0}
+        ], lr=cfg['lr'], momentum=cfg['momentum'])
+
+        # optimizer = optim.SGD(model.parameters(), lr=cfg['lr'], momentum=cfg['momentum'],
+        #                       weight_decay=cfg['weight_decay'])
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=cfg.get('milestones', [50, 75]), gamma=0.1)
 
         total_steps = cfg['epochs_per_task'] * len(train_loader)
