@@ -263,7 +263,15 @@ def main(cfg):
                         Lm_buf = triplet_loss_hardest_neg(emb_buf, pos_buf, buf_labels, anchors_tensor, seen_inds,
                                                           margin=cfg['margin'])
 
-                        loss += cfg['replay_lambda'] * Lm_buf
+                        if old_anchor_mat is not None and cfg['beta'] > 0:
+                            with torch.no_grad():
+                                emb_prev_buf = prev_model(buf_imgs_aug)
+                            Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
+                        else:
+                            Ld_buf = torch.tensor(0.0, device=device)
+                        loss += cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf)
+
+                        # loss += cfg['replay_lambda'] * Lm_buf
 
                         # Ld_buf = torch.tensor(0.0, device=device)
                         # if old_anchor_mat is not None and cfg['beta'] > 0:
