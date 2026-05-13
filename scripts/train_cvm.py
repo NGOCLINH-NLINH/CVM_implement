@@ -77,6 +77,32 @@ def evaluate_task_full_anchors(model, test_full, task_class_inds, anchors_tensor
     return correct / total if total > 0 else 0.0
 
 
+def evaluate_task_seen_anchors(model, test_full, task_class_inds, seen_indices, anchors_tensor, device):
+    idxs = [i for i, (_, lbl) in enumerate(test_full) if lbl in task_class_inds]
+    if len(idxs) == 0:
+        return 0.0
+    loader = DataLoader(Subset(test_full, idxs), batch_size=128, shuffle=False, num_workers=2)
+    model.eval()
+    anchors_seen = anchors_tensor[seen_indices].to(device)
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for images, labels in loader:
+            images = images.to(device)
+            emb = model(images)
+
+            sims = emb @ anchors_seen.t()
+            preds = sims.argmax(dim=1).cpu().numpy()
+
+            global_preds = [seen_indices[p] for p in preds]
+            true = labels.numpy()
+
+            correct += sum([1 for i in range(len(true)) if global_preds[i] == true[i]])
+            total += len(true)
+
+    return correct / total if total > 0 else 0.0
+
+
 def zero_shot_eval(model, anchors_tensor, unseen_indices, test_full, device):
     if len(unseen_indices) == 0:
         return 0.0
@@ -366,7 +392,7 @@ def main(cfg):
             if i_task > t:
                 per_task_accs.append(None)
             else:
-                acc_old_task = evaluate_task_full_anchors(model, test_full, t_classes, anchors_tensor, anchor_keys,
+                acc_old_task = evaluate_task_seen_anchors(model, test_full, t_classes, seen_inds, anchors_tensor,
                                                           device)
                 per_task_accs.append(acc_old_task)
                 print(f"  -> Acc on Task {i_task} (Classes {min(t_classes)}-{max(t_classes)}): {acc_old_task:.4f}")
