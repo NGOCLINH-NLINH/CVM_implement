@@ -2,6 +2,7 @@ import sys
 import os
 
 from sklearn.linear_model import LogisticRegression
+from torch import nn
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -240,6 +241,10 @@ def main(cfg):
 
         for epoch in range(cfg['epochs_per_task']):
             model.train()
+            if t > 0:
+                for m in model.modules():
+                    if isinstance(m, nn.BatchNorm2d):
+                        m.eval()
             K = 9
 
             for images, raw_images, labels in train_loader:
@@ -281,6 +286,7 @@ def main(cfg):
 
                     neg_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
                     Lm = triplet_loss_emb(emb, pos, neg_tensor, margin=cfg['margin'])
+                    # Lm = triplet_loss_seen_negs(emb, pos, labels_cuda, anchors_tensor, seen_inds, margin=cfg['margin'])
 
                     if old_anchor_mat is not None and cfg['beta'] > 0:
                         with torch.no_grad():
@@ -310,14 +316,6 @@ def main(cfg):
                         # loss += cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf)
 
                         loss += cfg['replay_lambda'] * Lm_buf
-
-                        # Ld_buf = torch.tensor(0.0, device=device)
-                        # if old_anchor_mat is not None and cfg['beta'] > 0:
-                        #     with torch.no_grad():
-                        #         emb_prev_buf = prev_model(buf_imgs_aug)
-                        #     Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
-
-                        # loss += cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf)
 
                 else:
                     neg_idx_list = []
