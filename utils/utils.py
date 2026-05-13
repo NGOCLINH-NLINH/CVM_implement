@@ -78,6 +78,26 @@ def triplet_loss_emb(emb, pos_emb, neg_emb, margin=0.1):
     return loss
 
 
+def triplet_loss_hardest_neg(emb, pos_emb, labels, anchors_tensor, seen_indices, margin=0.1):
+    device = emb.device
+    anchors_seen = anchors_tensor[seen_indices].to(device)
+
+    cos_pos = (emb * pos_emb).sum(dim=1)
+    d_pos = 1.0 - cos_pos
+
+    cos_seen = emb @ anchors_seen.t()
+    d_seen = 1.0 - cos_seen
+
+    seen_indices_tensor = torch.tensor(seen_indices, device=device).unsqueeze(0)
+    mask = (seen_indices_tensor == labels.unsqueeze(1))
+
+    loss_mat = torch.clamp(d_pos.unsqueeze(1) - d_seen + margin, min=0.0)
+    loss_mat[mask] = 0.0
+    hardest_losses, _ = loss_mat.max(dim=1)
+
+    return hardest_losses.mean()
+
+
 def semantic_distance_loss(emb, emb_prev, old_anchor_matrix):
     if old_anchor_matrix is None or old_anchor_matrix.shape[0] == 0:
         return torch.tensor(0.0, device=emb.device)
