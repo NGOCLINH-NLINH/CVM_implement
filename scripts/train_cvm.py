@@ -308,8 +308,15 @@ def main(cfg):
                 Ld = torch.tensor(0.0, device=device)
                 if old_anchor_mat is not None and cfg.get('beta', 0.0) > 0:
                     with torch.no_grad():
-                        emb_prev_combined = prev_model(combined_images)
-                    Ld = semantic_distance_loss(emb_combined, emb_prev_combined, old_anchor_mat)
+                        if cfg.get('Ld_buf', True):
+                            emb_prev_combined = prev_model(combined_images)
+                        else:
+                            emb_prev_new = prev_model(images_cuda)
+                    if cfg.get('Ld_buf', True):
+                        Ld = semantic_distance_loss(emb_combined, emb_prev_combined, old_anchor_mat)
+                    else:
+                        emb_new = emb_combined[:images_cuda.size(0)]
+                        Ld = semantic_distance_loss(emb_new, emb_prev_new, old_anchor_mat)
 
                 loss = Lm + cfg['beta'] * Ld
 
