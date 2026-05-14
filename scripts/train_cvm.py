@@ -212,7 +212,8 @@ def main(cfg):
     anchor_keys, anchors_tensor = load_anchors(cfg['anchors_path'], device=device)
     print("Loaded anchors:", len(anchor_keys))
 
-    model = ResNetCVM(out_dim=cfg['out_dim'], pretrained=cfg.get('pretrained_backbone', False), sparsity_ratio=cfg['sparsity_ratio']).to(device)
+    model = ResNetCVM(out_dim=cfg['out_dim'], pretrained=cfg.get('pretrained_backbone', False),
+                      sparsity_ratio=cfg['sparsity_ratio']).to(device)
     prev_model = None
 
     buffer = ReservoirBuffer(capacity=cfg['memory_size'])
@@ -294,7 +295,6 @@ def main(cfg):
 
                     neg_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
                     Lm = triplet_loss_emb(emb, pos, neg_tensor, margin=cfg['margin'])
-                    # Lm = triplet_loss_seen_negs(emb, pos, labels_cuda, anchors_tensor, seen_inds, margin=cfg['margin'])
 
                     if old_anchor_mat is not None and cfg['beta'] > 0:
                         with torch.no_grad():
@@ -315,7 +315,7 @@ def main(cfg):
                         neg_tensor_buf = anchors_tensor[torch.tensor(neg_idx_list_buf, dtype=torch.long, device=device)]
                         Lm_buf = triplet_loss_emb(emb_buf, pos_buf, neg_tensor_buf, margin=cfg['margin'])
 
-                        if old_anchor_mat is not None and cfg['beta'] > 0:
+                        if cfg.get('Ldbuf', False) and old_anchor_mat is not None and cfg['beta'] > 0:
                             with torch.no_grad():
                                 emb_prev_buf = prev_model(buf_imgs_aug)
                             Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
