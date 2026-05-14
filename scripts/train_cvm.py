@@ -233,18 +233,6 @@ def main(cfg):
         old_inds = [i for i in seen_inds]
         seen_inds += cur_inds
 
-        # decay_params = []
-        # no_decay_params = []
-        # for name, param in model.named_parameters():
-        #     if 'fc' in name:
-        #         no_decay_params.append(param)
-        #     else:
-        #         decay_params.append(param)
-        # optimizer = optim.SGD([
-        #     {'params': decay_params, 'weight_decay': cfg['weight_decay']},
-        #     {'params': no_decay_params, 'weight_decay': 0.0}
-        # ], lr=cfg['lr'], momentum=cfg['momentum'])
-
         optimizer = optim.SGD(model.parameters(), lr=cfg['lr'], momentum=cfg['momentum'],
                               weight_decay=cfg['weight_decay'])
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=cfg.get('milestones', [50, 75]), gamma=0.1)
@@ -275,59 +263,32 @@ def main(cfg):
                         buf_imgs_raw = buf_imgs_raw.to(device)
                         buf_labels = buf_labels_cpu.to(device)
                         buf_imgs_aug = torch.stack([replay_transform(img) for img in buf_imgs_raw])
-                        pos_buf = anchors_tensor[buf_labels].to(device)
+
                         combined_images = torch.cat([images_cuda, buf_imgs_aug], dim=0)
-                        combined_emb = model(combined_images)
-                        emb = combined_emb[:images_cuda.size(0)]
-                        emb_buf = combined_emb[images_cuda.size(0):]
+                        combined_labels = torch.cat([labels_cuda, buf_labels], dim=0)
                     else:
-                        has_buffer = False
-                        emb = model(images_cuda)
+                        combined_images = images_cuda
+                        combined_labels = labels_cuda
                 else:
-                    emb = model(images_cuda)
+                    combined_images = images_cuda
+                    combined_labels = labels_cuda
+
+                emb_combined = model(combined_images)
+                pos_combined = anchors_tensor[combined_labels].to(device)
 
                 if cfg.get('original_cvm', False):
                     neg_idx_list = []
-                    for lbl in labels_cuda.cpu().numpy():
+                    for lbl in combined_labels.cpu().numpy():
                         choices = [c for c in seen_inds if c != lbl]
                         neg_idx = random.choice(choices) if len(choices) > 0 else lbl
                         neg_idx_list.append(neg_idx)
 
                     neg_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
-                    Lm = triplet_loss_emb(emb, pos, neg_tensor, margin=cfg['margin'])
-
-                    if old_anchor_mat is not None and cfg['beta'] > 0:
-                        with torch.no_grad():
-                            emb_prev = prev_model(images_cuda)
-                        Ld = semantic_distance_loss(emb, emb_prev, old_anchor_mat)
-                    else:
-                        Ld = torch.tensor(0.0, device=device)
-
-                    loss = Lm + cfg['beta'] * Ld
-
-                    if has_buffer:
-                        neg_idx_list_buf = []
-                        for lbl in buf_labels.cpu().numpy():
-                            choices = [c for c in seen_inds if c != lbl]
-                            neg_idx = random.choice(choices) if len(choices) > 0 else lbl
-                            neg_idx_list_buf.append(neg_idx)
-
-                        neg_tensor_buf = anchors_tensor[torch.tensor(neg_idx_list_buf, dtype=torch.long, device=device)]
-                        Lm_buf = triplet_loss_emb(emb_buf, pos_buf, neg_tensor_buf, margin=cfg['margin'])
-
-                        if cfg.get('Ldbuf', False) and old_anchor_mat is not None and cfg['beta'] > 0:
-                            with torch.no_grad():
-                                emb_prev_buf = prev_model(buf_imgs_aug)
-                            Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
-                        else:
-                            Ld_buf = torch.tensor(0.0, device=device)
-                        loss += cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf)
-
-                        # loss += cfg['replay_lambda'] * Lm_buf
+                    Lm = triplet_loss_emb(emb_combined, pos_combined, neg_tensor, margin=cfg['margin'])
 
                 else:
                     neg_idx_list = []
-                    for lbl in labels.numpy():
+                    for lbl in combined_labels.cpu().numpy():
                         choices = [c for c in seen_inds if c != lbl]
                         if len(choices) >= K:
                             negs = random.sample(choices, k=K)
@@ -337,34 +298,20 @@ def main(cfg):
                     neg_k_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
 
                     if cfg['adaptive_margin']:
-                        Lm = adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k_tensor, base_margin=cfg['margin'])
+                        Lm = adaptive_margin_triplet_loss_k_negs(emb_combined, pos_combined, neg_k_tensor, base_margin=cfg['margin'])
                         # Lm = adaptive_margin_triplet_loss_seen_negs(emb, pos, labels_cuda, anchors_tensor, seen_inds,
                         #                                             base_margin=cfg['margin'])
                     else:
-                        Lm = triplet_loss_k_negs(emb, pos, neg_k_tensor, margin=cfg['margin'])
+                        Lm = triplet_loss_k_negs(emb_combined, pos_combined, neg_k_tensor, margin=cfg['margin'])
                         # Lm = triplet_loss_seen_negs(emb, pos, labels_cuda, anchors_tensor, seen_inds, margin=cfg['margin'])
 
-                    if old_anchor_mat is not None and cfg['beta'] > 0:
-                        with torch.no_grad():
-                            emb_prev = prev_model(images_cuda)
-                        Ld = semantic_distance_loss(emb, emb_prev, old_anchor_mat)
-                    else:
-                        Ld = torch.tensor(0.0, device=device)
+                Ld = torch.tensor(0.0, device=device)
+                if old_anchor_mat is not None and cfg.get('beta', 0.0) > 0:
+                    with torch.no_grad():
+                        emb_prev_combined = prev_model(combined_images)
+                    Ld = semantic_distance_loss(emb_combined, emb_prev_combined, old_anchor_mat)
 
-                    loss = Lm + cfg['beta'] * Ld
-                    # loss = Lm
-
-                    if has_buffer:
-                        Lm_buf = triplet_loss_seen_negs(emb_buf, pos_buf, buf_labels, anchors_tensor, seen_inds,
-                                                        margin=cfg['margin'])
-
-                        Ld_buf = torch.tensor(0.0, device=device)
-                        if old_anchor_mat is not None and cfg['beta'] > 0:
-                            with torch.no_grad():
-                                emb_prev_buf = prev_model(buf_imgs_aug)
-                            Ld_buf = semantic_distance_loss(emb_buf, emb_prev_buf, old_anchor_mat)
-
-                        loss += cfg['replay_lambda'] * (Lm_buf + cfg['beta'] * Ld_buf)
+                loss = Lm + cfg['beta'] * Ld
 
                 loss.backward()
 
@@ -416,13 +363,13 @@ def main(cfg):
                 print(f"  -> Acc on Task {i_task} (Classes {min(t_classes)}-{max(t_classes)}): {acc_old_task:.4f}")
         eval_history.append(per_task_accs)
 
-    fw_score, _ = compute_forgetting(eval_history)
+    forgetting_score, _ = compute_forgetting(eval_history)
     final_task_accs = eval_history[-1]
     avg_acc_final = np.mean([acc for acc in final_task_accs if acc is not None])
 
     print(f"\n--- FINAL RESULTS (Seed {cfg['seed']}) ---")
     print(f"Avg Accuracy: {avg_acc_final:.4f}")
-    print(f"Forgetting: {fw_score:.4f}")
+    print(f"Forgetting: {forgetting_score:.4f}")
 
     # results = {
     #     "exp_name": cfg['exp_name'],
