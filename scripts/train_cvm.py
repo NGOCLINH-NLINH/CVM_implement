@@ -192,7 +192,6 @@ def main(cfg):
     # print(f"DEVICE: {device}")
     # print(f"{'=' * 50}\n")
 
-    # tasks
     tasks, class_names = make_cifar100_tasks(cfg['num_tasks'], cfg['batch_size'], augment=True)
     train_full = datasets.CIFAR100(root="data", train=True, download=True, transform=transforms.Compose([
         transforms.RandomCrop(32, padding=4),
@@ -243,7 +242,6 @@ def main(cfg):
 
         for epoch in range(cfg['epochs_per_task']):
             model.train()
-            K = 9
 
             for images, raw_images, labels in train_loader:
                 optimizer.zero_grad()
@@ -289,24 +287,52 @@ def main(cfg):
                         Lm = triplet_loss_emb(emb_combined, pos_combined, neg_tensor, margin=cfg['margin'])
 
                     else:
-                        neg_idx_list = []
-                        for lbl in combined_labels.cpu().numpy():
-                            choices = [c for c in seen_inds if c != lbl]
-                            if len(choices) >= K:
-                                negs = random.sample(choices, k=K)
+                        if cfg.get('use_all_seen_negs', False):
+                            if cfg.get('adaptive_margin', False):
+                                Lm = adaptive_margin_triplet_loss_seen_negs(
+                                    emb=emb_combined,
+                                    pos_emb=pos_combined,
+                                    labels=combined_labels,
+                                    anchors_tensor=anchors_tensor,
+                                    seen_indices=seen_inds,
+                                    base_margin=cfg['margin']
+                                )
                             else:
-                                negs = random.choices(choices, k=K)
-                            neg_idx_list.append(negs)
-                        neg_k_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
-
-                        if cfg['adaptive_margin']:
-                            Lm = adaptive_margin_triplet_loss_k_negs(emb_combined, pos_combined, neg_k_tensor,
-                                                                     base_margin=cfg['margin'])
-                            # Lm = adaptive_margin_triplet_loss_seen_negs(emb, pos, labels_cuda, anchors_tensor, seen_inds,
-                            #                                             base_margin=cfg['margin'])
+                                Lm = triplet_loss_seen_negs(
+                                    emb=emb_combined,
+                                    pos_emb=pos_combined,
+                                    labels=combined_labels,
+                                    anchors_tensor=anchors_tensor,
+                                    seen_indices=seen_inds,
+                                    margin=cfg['margin']
+                                )
                         else:
-                            Lm = triplet_loss_k_negs(emb_combined, pos_combined, neg_k_tensor, margin=cfg['margin'])
-                            # Lm = triplet_loss_seen_negs(emb, pos, labels_cuda, anchors_tensor, seen_inds, margin=cfg['margin'])
+                            K_val = cfg.get('k_negs', 9)
+                            neg_idx_list = []
+                            for lbl in combined_labels.cpu().numpy():
+                                choices = [c for c in seen_inds if c != lbl]
+                                if len(choices) >= K_val:
+                                    negs = random.sample(choices, k=K_val)
+                                else:
+                                    negs = random.choices(choices, k=K_val) if len(choices) > 0 else [lbl] * K_val
+                                neg_idx_list.append(negs)
+
+                            neg_k_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
+
+                            if cfg.get('adaptive_margin', False):
+                                Lm = adaptive_margin_triplet_loss_k_negs(
+                                    emb=emb_combined,
+                                    pos=pos_combined,
+                                    neg_k=neg_k_tensor,
+                                    base_margin=cfg['margin']
+                                )
+                            else:
+                                Lm = triplet_loss_k_negs(
+                                    emb=emb_combined,
+                                    pos_emb=pos_combined,
+                                    neg_embs=neg_k_tensor,
+                                    margin=cfg['margin']
+                                )
 
                     Ld = torch.tensor(0.0, device=device)
                     if old_anchor_mat is not None and cfg.get('beta', 0.0) > 0:
