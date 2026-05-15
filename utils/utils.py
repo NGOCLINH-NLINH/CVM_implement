@@ -105,7 +105,8 @@ def semantic_distance_loss(emb, emb_prev, old_anchor_matrix):
     cos_prev = emb_prev @ old_anchor_matrix.t()
     d_t = 1.0 - cos_t
     d_prev = 1.0 - cos_prev
-    return F.mse_loss(d_t, d_prev)
+    # return F.mse_loss(d_t, d_prev)
+    return ((d_t - d_prev) ** 2).sum(dim=1).mean()
 
 
 def make_cifar100_tasks(num_tasks, batch_size, augment=True):
