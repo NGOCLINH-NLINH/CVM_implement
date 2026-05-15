@@ -151,8 +151,8 @@ def make_cifar100_tasks(num_tasks, batch_size, augment=True):
 
         train_subset = Subset(train_dataset_wrapper, train_idx)
         test_subset = Subset(test_full, test_idx)
-        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=2)
-        test_loader = DataLoader(test_subset, batch_size=batch_size, shuffle=False, num_workers=2)
+        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=4)
+        test_loader = DataLoader(test_subset, batch_size=batch_size, shuffle=False, num_workers=4)
         tasks.append((train_loader, test_loader, list(range(start, end))))
     return tasks, classes
 
