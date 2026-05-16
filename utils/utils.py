@@ -105,7 +105,8 @@ def semantic_distance_loss(emb, emb_prev, old_anchor_matrix):
     cos_prev = emb_prev @ old_anchor_matrix.t()
     d_t = 1.0 - cos_t
     d_prev = 1.0 - cos_prev
-    return F.mse_loss(d_t, d_prev)
+    return F.l1_loss(d_t, d_prev)
+    # return F.mse_loss(d_t, d_prev)
     # return ((d_t - d_prev) ** 2).sum(dim=1).mean()
 
 
@@ -171,10 +172,10 @@ def triplet_loss_k_negs(emb, pos_emb, neg_embs, margin=0.1):
 
     cos_neg = (emb.unsqueeze(1) * neg_embs).sum(dim=2)
     d_neg = 1.0 - cos_neg
-    loss_mat = torch.clamp(d_pos.unsqueeze(1) - d_neg + margin, min=0.0)
-    loss_per_sample = loss_mat.sum(dim=1)
-    return loss_per_sample.mean()
-    # return loss.mean()
+    loss = torch.clamp(d_pos.unsqueeze(1) - d_neg + margin, min=0.0)
+    # loss_per_sample = loss_mat.sum(dim=1)
+    # return loss_per_sample.mean()
+    return loss.mean()
 
 
 def triplet_loss_seen_negs(emb, pos_emb, labels, anchors_tensor, seen_indices, margin=0.1):
@@ -257,15 +258,15 @@ def adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k, base_margin=0.1, reduct
     anchor_sim = (pos.unsqueeze(1) * neg_k).sum(dim=2)
 
     adaptive_margin = base_margin * (1.0 - anchor_sim).clamp(min=0.0)
-    loss_mat = F.relu(sim_neg - sim_pos + adaptive_margin)
-    loss_per_sample = loss_mat.sum(dim=1)
-    return loss_per_sample.mean()
-    # if reduction == "mean":
-    #     return loss.mean()
-    # elif reduction == "sum":
-    #     return loss.sum()
-    # else:
-    #     return loss
+    loss = F.relu(sim_neg - sim_pos + adaptive_margin)
+    # loss_per_sample = loss_mat.sum(dim=1)
+    # return loss_per_sample.mean()
+    if reduction == "mean":
+        return loss.mean()
+    elif reduction == "sum":
+        return loss.sum()
+    else:
+        return loss
 
 
 # def make_cifar100_tasks(num_tasks, batch_size, augment=True):
