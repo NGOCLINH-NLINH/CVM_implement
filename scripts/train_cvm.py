@@ -248,7 +248,7 @@ def main(cfg):
 
                 images_cuda = images.to(device)
                 labels_cuda = labels.to(device)
-                pos = anchors_tensor[labels_cuda].to(device)
+                # pos = anchors_tensor[labels_cuda].to(device)
 
                 if prev_model is not None and len(old_inds) > 0:
                     old_anchor_mat = anchors_tensor[old_inds].to(device)
@@ -336,16 +336,25 @@ def main(cfg):
 
                     Ld = torch.tensor(0.0, device=device)
                     if old_anchor_mat is not None and cfg.get('beta', 0.0) > 0:
-                        with torch.no_grad():
-                            if cfg.get('Ld_buf', True):
-                                emb_prev_combined = prev_model(combined_images)
-                            else:
+                        num_new = images_cuda.size(0)
+                        ld_mode = cfg.get('Ld_mode', 'buf')
+
+                        if ld_mode == 'buf' and has_buffer:
+                            emb_buf_current = emb_combined[num_new:]
+                            with torch.no_grad():
+                                emb_prev_buf = prev_model(buf_imgs_aug)
+                            Ld = semantic_distance_loss(emb_buf_current, emb_prev_buf, old_anchor_mat)
+
+                        elif ld_mode == 'new':
+                            emb_new_current = emb_combined[:num_new]
+                            with torch.no_grad():
                                 emb_prev_new = prev_model(images_cuda)
-                        if cfg.get('Ld_buf', True):
+                            Ld = semantic_distance_loss(emb_new_current, emb_prev_new, old_anchor_mat)
+
+                        elif ld_mode == 'both':
+                            with torch.no_grad():
+                                emb_prev_combined = prev_model(combined_images)
                             Ld = semantic_distance_loss(emb_combined, emb_prev_combined, old_anchor_mat)
-                        else:
-                            emb_new = emb_combined[:images_cuda.size(0)]
-                            Ld = semantic_distance_loss(emb_new, emb_prev_new, old_anchor_mat)
 
                     loss = Lm + cfg['beta'] * Ld
 
