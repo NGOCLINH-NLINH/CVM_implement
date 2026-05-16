@@ -114,7 +114,8 @@ def semantic_distance_loss(emb, emb_prev, old_anchor_matrix):
     # return F.l1_loss(d_t, d_prev)
     # return F.mse_loss(d_t, d_prev)
     # return ((d_t - d_prev) ** 2).sum(dim=1).mean()
-    return torch.abs(d_t - d_prev).mean()
+    # return torch.abs(d_t - d_prev).mean()
+    return torch.abs(d_t - d_prev).sum(dim=1).mean()
 
 
 def make_cifar100_tasks(num_tasks, batch_size, augment=True):
