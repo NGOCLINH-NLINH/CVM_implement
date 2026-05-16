@@ -74,14 +74,18 @@ class ReservoirBuffer:
 def triplet_loss_emb(emb, pos_emb, neg_emb, margin=0.1):
     d_pos = 1.0 - F.cosine_similarity(emb, pos_emb, dim=1)
     d_neg = 1.0 - F.cosine_similarity(emb, neg_emb, dim=1)
+    loss_tensor = F.relu(d_pos - d_neg + margin)
+    return loss_tensor
+
     # loss = F.relu(d_pos - d_neg + margin).mean()
     # return loss
-    loss_tensor = F.relu(d_pos - d_neg + margin)
-    active_losses = loss_tensor[loss_tensor > 0]
-    if len(active_losses) > 0:
-        return active_losses.mean()
-    else:
-        return torch.tensor(0.0, device=emb.device, requires_grad=True)
+
+    # loss_tensor = F.relu(d_pos - d_neg + margin)
+    # active_losses = loss_tensor[loss_tensor > 0]
+    # if len(active_losses) > 0:
+    #     return active_losses.mean()
+    # else:
+    #     return torch.tensor(0.0, device=emb.device, requires_grad=True)
 
 
 def triplet_loss_hardest_neg(emb, pos_emb, labels, anchors_tensor, seen_indices, margin=0.1):
@@ -112,10 +116,10 @@ def semantic_distance_loss(emb, emb_prev, old_anchor_matrix):
     d_t = 1.0 - cos_t
     d_prev = 1.0 - cos_prev
     # return F.l1_loss(d_t, d_prev)
-    # return F.mse_loss(d_t, d_prev)
+    return F.mse_loss(d_t, d_prev)
     # return ((d_t - d_prev) ** 2).sum(dim=1).mean()
     # return torch.abs(d_t - d_prev).mean()
-    return torch.abs(d_t - d_prev).sum(dim=1).mean()
+    # return torch.abs(d_t - d_prev).sum(dim=1).mean()
 
 
 def make_cifar100_tasks(num_tasks, batch_size, augment=True):

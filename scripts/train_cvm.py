@@ -282,7 +282,15 @@ def main(cfg):
                         neg_idx_list.append(neg_idx)
 
                     neg_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
-                    Lm = triplet_loss_emb(emb_combined, pos_combined, neg_tensor, margin=cfg['margin'])
+                    Lm_unreduced = triplet_loss_emb(emb_combined, pos_combined, neg_tensor, margin=cfg['margin'])
+                    num_new = images_cuda.size(0)
+                    Lm_new = Lm_unreduced[:num_new].mean()
+                    if has_buffer:
+                        Lm_buf = Lm_unreduced[num_new:].mean()
+                        replay_weight = cfg.get('replay_lambda', 2.0)
+                        Lm = Lm_new + replay_weight * Lm_buf
+                    else:
+                        Lm = Lm_new
 
                 else:
                     if cfg.get('use_all_seen_negs', False):
