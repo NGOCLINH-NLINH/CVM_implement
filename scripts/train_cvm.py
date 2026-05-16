@@ -352,23 +352,38 @@ def main(cfg):
                 if old_anchor_mat is not None and cfg.get('beta', 0.0) > 0:
                     num_new = images_cuda.size(0)
                     ld_mode = cfg.get('Ld_mode', 'buf')
+                    replay_weight = cfg.get('replay_lambda', 2.0)
 
                     if ld_mode == 'buf' and has_buffer:
                         emb_buf_current = emb_combined[num_new:]
                         with torch.no_grad():
                             emb_prev_buf = prev_model(buf_imgs_aug)
-                        Ld = semantic_distance_loss(emb_buf_current, emb_prev_buf, old_anchor_mat)
+                        Ld_unreduced = semantic_distance_loss(emb_buf_current, emb_prev_buf, old_anchor_mat,
+                                                              reduction='none')
+                        Ld = Ld_unreduced.mean() * replay_weight
 
                     elif ld_mode == 'new':
                         emb_new_current = emb_combined[:num_new]
                         with torch.no_grad():
                             emb_prev_new = prev_model(images_cuda)
-                        Ld = semantic_distance_loss(emb_new_current, emb_prev_new, old_anchor_mat)
+
+                        Ld_unreduced = semantic_distance_loss(emb_new_current, emb_prev_new, old_anchor_mat,
+                                                              reduction='none')
+                        Ld = Ld_unreduced.mean()
 
                     elif ld_mode == 'both':
                         with torch.no_grad():
                             emb_prev_combined = prev_model(combined_images)
-                        Ld = semantic_distance_loss(emb_combined, emb_prev_combined, old_anchor_mat)
+
+                        Ld_unreduced = semantic_distance_loss(emb_combined, emb_prev_combined, old_anchor_mat,
+                                                              reduction='none')
+
+                        Ld_new = Ld_unreduced[:num_new].mean()
+                        if has_buffer:
+                            Ld_buf = Ld_unreduced[num_new:].mean()
+                            Ld = Ld_new + replay_weight * Ld_buf
+                        else:
+                            Ld = Ld_new
 
                 loss = Lm + cfg['beta'] * Ld
 
