@@ -107,8 +107,8 @@ def semantic_distance_loss(emb, emb_prev, old_anchor_matrix):
     d_prev = 1.0 - cos_prev
     # return F.l1_loss(d_t, d_prev)
     # return F.mse_loss(d_t, d_prev)
-    # return ((d_t - d_prev) ** 2).sum(dim=1).mean()
-    return torch.abs(d_t - d_prev).mean()
+    return ((d_t - d_prev) ** 2).sum(dim=1).mean()
+    # return torch.abs(d_t - d_prev).mean()
 
 
 def make_cifar100_tasks(num_tasks, batch_size, augment=True):
@@ -348,17 +348,17 @@ class HerdingBuffer:
 
         w_t = mu.clone()
         selected_indices = []
-        step_t = 0
 
-        while len(selected_indices) < nb_protos_cl and step_t < int(1.1 * nb_protos_cl):
+        for _ in range(nb_protos_cl):
             tmp_t = torch.matmul(w_t, D)
+
+            if len(selected_indices) > 0:
+                tmp_t[selected_indices] = -float('inf')
+
             ind_max = torch.argmax(tmp_t).item()
 
             w_t = w_t + mu - D[:, ind_max]
-            step_t += 1
-
-            if ind_max not in selected_indices:
-                selected_indices.append(ind_max)
+            selected_indices.append(ind_max)
 
         exemplars = [(images[i].clone(), int(labels[i].item())) for i in selected_indices]
         return exemplars
