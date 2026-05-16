@@ -215,7 +215,7 @@ def main(cfg):
                       sparsity_ratio=cfg['sparsity_ratio']).to(device)
     prev_model = None
 
-    buffer = HerdingBuffer(capacity=cfg['memory_size'])
+    buffer = ReservoirBuffer(capacity=cfg['memory_size'])
 
     seen_inds = []
 
@@ -375,9 +375,9 @@ def main(cfg):
         pbar.close()
 
         print("Updating Replay Buffer...")
-        buffer.update_buffer(model, train_loader, cur_inds, device)
-        # for _, raw_images, labels in train_loader:
-        #     buffer.add_batch(raw_images, labels)
+        # buffer.update_buffer(model, train_loader, cur_inds, device)
+        for _, raw_images, labels in train_loader:
+            buffer.add_batch(raw_images, labels)
 
         prev_model = copy.deepcopy(model).eval().to(device)
 
