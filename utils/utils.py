@@ -106,8 +106,8 @@ def semantic_distance_loss(emb, emb_prev, old_anchor_matrix):
     d_t = 1.0 - cos_t
     d_prev = 1.0 - cos_prev
     # return F.l1_loss(d_t, d_prev)
-    # return F.mse_loss(d_t, d_prev)
-    return ((d_t - d_prev) ** 2).sum(dim=1).mean()
+    return F.mse_loss(d_t, d_prev)
+    # return ((d_t - d_prev) ** 2).sum(dim=1).mean()
     # return torch.abs(d_t - d_prev).mean()
 
 
