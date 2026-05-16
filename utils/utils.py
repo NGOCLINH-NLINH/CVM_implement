@@ -334,3 +334,85 @@ def get_semantic_mask(batch_anchors, hash_mat, sparsity=0.4):
 
     batch_mask, _ = torch.max(mask, dim=0)
     return batch_mask
+
+
+class HerdingBuffer:
+    def __init__(self, capacity=500):
+        self.capacity = capacity
+        self.memory = {}
+        self.seen_classes = []
+
+    def icarl_herding(self, features, images, labels, nb_protos_cl):
+        D = features.t()
+        mu = D.mean(dim=1)
+
+        w_t = mu.clone()
+        selected_indices = []
+        step_t = 0
+
+        while len(selected_indices) < nb_protos_cl and step_t < int(1.1 * nb_protos_cl):
+            tmp_t = torch.matmul(w_t, D)
+            ind_max = torch.argmax(tmp_t).item()
+
+            w_t = w_t + mu - D[:, ind_max]
+            step_t += 1
+
+            if ind_max not in selected_indices:
+                selected_indices.append(ind_max)
+
+        exemplars = [(images[i].clone(), int(labels[i].item())) for i in selected_indices]
+        return exemplars
+
+    def update_buffer(self, model, dataloader, class_inds, device):
+
+        model.eval()
+
+        all_features = {c: [] for c in class_inds}
+        all_images = {c: [] for c in class_inds}
+        all_labels = {c: [] for c in class_inds}
+
+        with torch.no_grad():
+            for imgs, raw_imgs, lbls in dataloader:
+                imgs_cuda = imgs.to(device)
+                feats = model(imgs_cuda).cpu()
+
+                for i in range(len(lbls)):
+                    lbl = int(lbls[i].item())
+                    if lbl in class_inds:
+                        all_features[lbl].append(feats[i].unsqueeze(0))
+                        all_images[lbl].append(raw_imgs[i])
+                        all_labels[lbl].append(lbls[i])
+
+        self.seen_classes.extend(class_inds)
+
+        m = self.capacity // len(self.seen_classes)
+
+        for c in self.memory.keys():
+            self.memory[c] = self.memory[c][:m]
+
+        for c in class_inds:
+            feats_c = torch.cat(all_features[c], dim=0)
+            imgs_c = torch.stack(all_images[c], dim=0)
+            lbls_c = torch.tensor(all_labels[c], dtype=torch.long)
+
+            exemplars_c = self.icarl_herding(feats_c, imgs_c, lbls_c, nb_protos_cl=m)
+            self.memory[c] = exemplars_c
+
+    def sample(self, batch_size):
+        if len(self.memory) == 0:
+            return None, None
+
+        all_exemplars = []
+        for exemplars in self.memory.values():
+            all_exemplars.extend(exemplars)
+
+        if len(all_exemplars) == 0:
+            return None, None
+
+        batch = random.sample(all_exemplars, k=min(batch_size, len(all_exemplars)))
+        imgs = torch.stack([b[0] for b in batch])
+        labels = torch.tensor([b[1] for b in batch], dtype=torch.long)
+        return imgs, labels
+
+    def __len__(self):
+        return sum([len(v) for v in self.memory.values()])
