@@ -371,10 +371,12 @@ class HerdingBuffer:
         all_images = {c: [] for c in class_inds}
         all_labels = {c: [] for c in class_inds}
 
+        val_norm = transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
+
         with torch.no_grad():
             for imgs, raw_imgs, lbls in dataloader:
-                imgs_cuda = imgs.to(device)
-                feats = model(imgs_cuda).cpu()
+                clean_imgs = torch.stack([val_norm(img) for img in raw_imgs]).to(device)
+                feats = model(clean_imgs).cpu()
 
                 for i in range(len(lbls)):
                     lbl = int(lbls[i].item())

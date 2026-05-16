@@ -238,13 +238,12 @@ def main(cfg):
 
         total_steps = cfg['epochs_per_task'] * len(train_loader)
         pbar = tqdm(total=total_steps, desc=f"Task {t}", dynamic_ncols=True)
-        scaler = torch.amp.GradScaler('cuda')
 
         for epoch in range(cfg['epochs_per_task']):
             model.train()
 
             for images, raw_images, labels in train_loader:
-                optimizer.zero_grad()
+                optimizer.zero_grad(set_to_none=True)
 
                 images_cuda = images.to(device)
                 labels_cuda = labels.to(device)
@@ -272,94 +271,92 @@ def main(cfg):
                     combined_images = images_cuda
                     combined_labels = labels_cuda
 
-                with torch.amp.autocast('cuda'):
-                    emb_combined = model(combined_images)
-                    pos_combined = anchors_tensor[combined_labels].to(device)
+                emb_combined = model(combined_images)
+                pos_combined = anchors_tensor[combined_labels].to(device)
 
-                    if cfg.get('original_cvm', False):
+                if cfg.get('original_cvm', False):
+                    neg_idx_list = []
+                    for lbl in combined_labels.cpu().numpy():
+                        choices = [c for c in seen_inds if c != lbl]
+                        neg_idx = random.choice(choices) if len(choices) > 0 else lbl
+                        neg_idx_list.append(neg_idx)
+
+                    neg_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
+                    Lm = triplet_loss_emb(emb_combined, pos_combined, neg_tensor, margin=cfg['margin'])
+
+                else:
+                    if cfg.get('use_all_seen_negs', False):
+                        if cfg.get('adaptive_margin', False):
+                            Lm = adaptive_margin_triplet_loss_seen_negs(
+                                emb=emb_combined,
+                                pos_emb=pos_combined,
+                                labels=combined_labels,
+                                anchors_tensor=anchors_tensor,
+                                seen_indices=seen_inds,
+                                base_margin=cfg['margin']
+                            )
+                        else:
+                            Lm = triplet_loss_seen_negs(
+                                emb=emb_combined,
+                                pos_emb=pos_combined,
+                                labels=combined_labels,
+                                anchors_tensor=anchors_tensor,
+                                seen_indices=seen_inds,
+                                margin=cfg['margin']
+                            )
+                    else:
+                        K_val = cfg.get('k_negs', 9)
                         neg_idx_list = []
                         for lbl in combined_labels.cpu().numpy():
                             choices = [c for c in seen_inds if c != lbl]
-                            neg_idx = random.choice(choices) if len(choices) > 0 else lbl
-                            neg_idx_list.append(neg_idx)
-
-                        neg_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
-                        Lm = triplet_loss_emb(emb_combined, pos_combined, neg_tensor, margin=cfg['margin'])
-
-                    else:
-                        if cfg.get('use_all_seen_negs', False):
-                            if cfg.get('adaptive_margin', False):
-                                Lm = adaptive_margin_triplet_loss_seen_negs(
-                                    emb=emb_combined,
-                                    pos_emb=pos_combined,
-                                    labels=combined_labels,
-                                    anchors_tensor=anchors_tensor,
-                                    seen_indices=seen_inds,
-                                    base_margin=cfg['margin']
-                                )
+                            if len(choices) >= K_val:
+                                negs = random.sample(choices, k=K_val)
                             else:
-                                Lm = triplet_loss_seen_negs(
-                                    emb=emb_combined,
-                                    pos_emb=pos_combined,
-                                    labels=combined_labels,
-                                    anchors_tensor=anchors_tensor,
-                                    seen_indices=seen_inds,
-                                    margin=cfg['margin']
-                                )
+                                negs = random.choices(choices, k=K_val) if len(choices) > 0 else [lbl] * K_val
+                            neg_idx_list.append(negs)
+
+                        neg_k_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
+
+                        if cfg.get('adaptive_margin', False):
+                            Lm = adaptive_margin_triplet_loss_k_negs(
+                                emb=emb_combined,
+                                pos=pos_combined,
+                                neg_k=neg_k_tensor,
+                                base_margin=cfg['margin']
+                            )
                         else:
-                            K_val = cfg.get('k_negs', 9)
-                            neg_idx_list = []
-                            for lbl in combined_labels.cpu().numpy():
-                                choices = [c for c in seen_inds if c != lbl]
-                                if len(choices) >= K_val:
-                                    negs = random.sample(choices, k=K_val)
-                                else:
-                                    negs = random.choices(choices, k=K_val) if len(choices) > 0 else [lbl] * K_val
-                                neg_idx_list.append(negs)
+                            Lm = triplet_loss_k_negs(
+                                emb=emb_combined,
+                                pos_emb=pos_combined,
+                                neg_embs=neg_k_tensor,
+                                margin=cfg['margin']
+                            )
 
-                            neg_k_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
+                Ld = torch.tensor(0.0, device=device)
+                if old_anchor_mat is not None and cfg.get('beta', 0.0) > 0:
+                    num_new = images_cuda.size(0)
+                    ld_mode = cfg.get('Ld_mode', 'buf')
 
-                            if cfg.get('adaptive_margin', False):
-                                Lm = adaptive_margin_triplet_loss_k_negs(
-                                    emb=emb_combined,
-                                    pos=pos_combined,
-                                    neg_k=neg_k_tensor,
-                                    base_margin=cfg['margin']
-                                )
-                            else:
-                                Lm = triplet_loss_k_negs(
-                                    emb=emb_combined,
-                                    pos_emb=pos_combined,
-                                    neg_embs=neg_k_tensor,
-                                    margin=cfg['margin']
-                                )
+                    if ld_mode == 'buf' and has_buffer:
+                        emb_buf_current = emb_combined[num_new:]
+                        with torch.no_grad():
+                            emb_prev_buf = prev_model(buf_imgs_aug)
+                        Ld = semantic_distance_loss(emb_buf_current, emb_prev_buf, old_anchor_mat)
 
-                    Ld = torch.tensor(0.0, device=device)
-                    if old_anchor_mat is not None and cfg.get('beta', 0.0) > 0:
-                        num_new = images_cuda.size(0)
-                        ld_mode = cfg.get('Ld_mode', 'buf')
+                    elif ld_mode == 'new':
+                        emb_new_current = emb_combined[:num_new]
+                        with torch.no_grad():
+                            emb_prev_new = prev_model(images_cuda)
+                        Ld = semantic_distance_loss(emb_new_current, emb_prev_new, old_anchor_mat)
 
-                        if ld_mode == 'buf' and has_buffer:
-                            emb_buf_current = emb_combined[num_new:]
-                            with torch.no_grad():
-                                emb_prev_buf = prev_model(buf_imgs_aug)
-                            Ld = semantic_distance_loss(emb_buf_current, emb_prev_buf, old_anchor_mat)
+                    elif ld_mode == 'both':
+                        with torch.no_grad():
+                            emb_prev_combined = prev_model(combined_images)
+                        Ld = semantic_distance_loss(emb_combined, emb_prev_combined, old_anchor_mat)
 
-                        elif ld_mode == 'new':
-                            emb_new_current = emb_combined[:num_new]
-                            with torch.no_grad():
-                                emb_prev_new = prev_model(images_cuda)
-                            Ld = semantic_distance_loss(emb_new_current, emb_prev_new, old_anchor_mat)
+                loss = Lm + cfg['beta'] * Ld
 
-                        elif ld_mode == 'both':
-                            with torch.no_grad():
-                                emb_prev_combined = prev_model(combined_images)
-                            Ld = semantic_distance_loss(emb_combined, emb_prev_combined, old_anchor_mat)
-
-                    loss = Lm + cfg['beta'] * Ld
-
-                scaler.scale(loss).backward()
-                # loss.backward()
+                loss.backward()
 
                 # with torch.no_grad():
                 #     unique_labels = labels.unique()
@@ -367,11 +364,8 @@ def main(cfg):
                 #     sgm_mask = get_semantic_mask(batch_anchors, hash_matrix, sparsity=cfg.get('sparsity_mask', 0.40))
                 #     model.fc.weight.grad *= sgm_mask.unsqueeze(0)
 
-                scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
-                scaler.step(optimizer)
-                scaler.update()
-                # optimizer.step()
+                optimizer.step()
                 # buffer.add_batch(raw_images, labels)
 
                 pbar.update(1)
