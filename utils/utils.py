@@ -71,6 +71,14 @@ class ReservoirBuffer:
         return len(self.buffer)
 
 
+def get_active_mean(loss_slice):
+    active = loss_slice[loss_slice > 0]
+    if len(active) > 0:
+        return active.mean()
+    else:
+        return torch.tensor(0.0, device=loss_slice.device, requires_grad=True)
+
+
 def triplet_loss_emb(emb, pos_emb, neg_emb, margin=0.1):
     d_pos = 1.0 - F.cosine_similarity(emb, pos_emb, dim=1)
     d_neg = 1.0 - F.cosine_similarity(emb, neg_emb, dim=1)

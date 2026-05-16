@@ -24,7 +24,7 @@ from models.resnet_cvm import ResNetCVM
 from utils.utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, \
     set_seed, triplet_loss_k_negs, triplet_loss_seen_negs, image_side_prototype_spread_loss, \
     adaptive_margin_triplet_loss_k_negs, get_semantic_mask, adaptive_margin_triplet_loss_seen_negs, \
-    triplet_loss_hardest_neg, HerdingBuffer
+    triplet_loss_hardest_neg, HerdingBuffer, get_active_mean
 
 replay_transform = transforms.Compose([
     transforms.RandomCrop(32, padding=4),
@@ -284,9 +284,9 @@ def main(cfg):
                     neg_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
                     Lm_unreduced = triplet_loss_emb(emb_combined, pos_combined, neg_tensor, margin=cfg['margin'])
                     num_new = images_cuda.size(0)
-                    Lm_new = Lm_unreduced[:num_new].mean()
+                    Lm_new = get_active_mean(Lm_unreduced[:num_new])
                     if has_buffer:
-                        Lm_buf = Lm_unreduced[num_new:].mean()
+                        Lm_buf = get_active_mean(Lm_unreduced[num_new:])
                         replay_weight = cfg.get('replay_lambda', 2.0)
                         Lm = Lm_new + replay_weight * Lm_buf
                     else:
