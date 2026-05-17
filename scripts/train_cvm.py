@@ -271,7 +271,7 @@ def main(cfg):
                     combined_images = images_cuda
                     combined_labels = labels_cuda
 
-                with torch.cuda.amp.autocast(enabled=use_amp):
+                with torch.amp.autocast('cuda', enabled=use_amp):
                     emb_combined = model(combined_images)
                     pos_combined = anchors_tensor[combined_labels].to(device)
 

@@ -118,7 +118,8 @@ def get_active_mean(loss_slice):
     if len(active) > 0:
         return active.mean()
     else:
-        return torch.tensor(0.0, device=loss_slice.device, requires_grad=True)
+        return loss_slice.sum() * 0.0
+        # return torch.tensor(0.0, device=loss_slice.device, requires_grad=True)
 
 
 def triplet_loss_emb(emb, pos_emb, neg_emb, margin=0.1):
