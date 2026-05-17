@@ -388,7 +388,7 @@ def main(cfg):
                 #     sgm_mask = get_semantic_mask(batch_anchors, hash_matrix, sparsity=cfg.get('sparsity_mask', 0.40))
                 #     model.fc.weight.grad *= sgm_mask.unsqueeze(0)
 
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=cfg.get('max_norm', 5.0))
                 # optimizer.step()
                 # buffer.add_batch(raw_images, labels)
 
