@@ -215,7 +215,7 @@ def main(cfg):
                       sparsity_ratio=cfg['sparsity_ratio']).to(device)
     prev_model = None
 
-    buffer = ClassBalancedRandomBuffer(capacity=cfg['memory_size'], seed=cfg.get('seed', 1234))
+    buffer = ReservoirBuffer(capacity=cfg['memory_size'], seed=cfg.get('seed', 1234))
 
     seen_inds = []
 
@@ -401,10 +401,10 @@ def main(cfg):
             scheduler.step()
         pbar.close()
 
-        # print("Updating Replay Buffer...")
-        # for _, raw_images, labels in train_loader:
-        #     buffer.add_batch(raw_images, labels)
-        buffer.update_buffer(train_loader, cur_inds)
+        print("Updating Replay Buffer...")
+        for _, raw_images, labels in train_loader:
+            buffer.add_batch(raw_images, labels)
+        # buffer.update_buffer(train_loader, cur_inds)
 
         prev_model = copy.deepcopy(model).eval().to(device)
 
