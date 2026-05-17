@@ -315,7 +315,8 @@ def main(cfg):
                             if cfg.get('adaptive_margin', False):
                                 Lm_unreduced = adaptive_margin_triplet_loss_k_negs(
                                     emb=emb_combined, pos=pos_combined, neg_k=neg_k_tensor,
-                                    base_margin=cfg['margin'], reduction='none'
+                                    base_margin=cfg['margin'], reduction='none',
+                                    scale_factor=cfg.get('adaptive_margin_scale', 0.2)
                                 )
                             else:
                                 Lm_unreduced = triplet_loss_k_negs(

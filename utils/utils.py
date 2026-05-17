@@ -302,12 +302,18 @@ def image_side_prototype_spread_loss(emb, labels, anchors_tensor, seen_indices, 
     return loss_mat.sum() / (emb.size(0) * num_negs)
 
 
-def adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k, base_margin=0.1, reduction="none"):
+def adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k, base_margin=0.1, reduction="none", scale_factor=0.2):
     sim_pos = (emb * pos).sum(dim=1, keepdim=True)
     sim_neg = (emb.unsqueeze(1) * neg_k).sum(dim=2)
     anchor_sim = (pos.unsqueeze(1) * neg_k).sum(dim=2)
 
-    adaptive_margin = base_margin * (1.0 - anchor_sim).clamp(min=0.0)
+    # adaptive_margin = base_margin * (1.0 - anchor_sim).clamp(min=0.0)
+    # loss_matrix = F.relu(sim_neg - sim_pos + adaptive_margin)
+    # loss_per_sample = loss_matrix.mean(dim=1)
+
+    scale_factor = scale_factor
+    semantic_dist = (1.0 - anchor_sim).clamp(min=0.0)
+    adaptive_margin = base_margin + (scale_factor * semantic_dist)
     loss_matrix = F.relu(sim_neg - sim_pos + adaptive_margin)
     loss_per_sample = loss_matrix.mean(dim=1)
 
