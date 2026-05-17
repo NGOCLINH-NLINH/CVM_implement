@@ -182,7 +182,7 @@ def compute_forgetting(eval_history):
 def main(cfg):
     set_seed(cfg.get('seed', 1234))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # hash_matrix = torch.randn(384, 512, device=device)
+    hash_matrix = torch.randn(384, 512, device=device)
     print("Device:", device)
 
     # print(f"\n{'=' * 50}")
@@ -382,11 +382,11 @@ def main(cfg):
                 scaler.scale(loss).backward()
                 scaler.unscale_(optimizer)
 
-                # with torch.no_grad():
-                #     unique_labels = labels.unique()
-                #     batch_anchors = anchors_tensor[unique_labels]
-                #     sgm_mask = get_semantic_mask(batch_anchors, hash_matrix, sparsity=cfg.get('sparsity_mask', 0.40))
-                #     model.fc.weight.grad *= sgm_mask.unsqueeze(0)
+                with torch.no_grad():
+                    unique_labels = combined_labels.unique()
+                    batch_anchors = anchors_tensor[unique_labels]
+                    sgm_mask = get_semantic_mask(batch_anchors, hash_matrix, sparsity=cfg.get('sparsity_mask', 0.40))
+                    model.fc.weight.grad *= sgm_mask.unsqueeze(0)
 
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=cfg.get('max_norm', 5.0))
                 # optimizer.step()
