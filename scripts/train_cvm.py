@@ -226,6 +226,9 @@ def main(cfg):
 
     Path(cfg['checkpoints_dir']).mkdir(parents=True, exist_ok=True)
 
+    use_amp = cfg.get('use_amp', True)
+    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+
     for t, (train_loader, test_loader, class_inds) in enumerate(tasks):
         print(f"\n=== Training Task {t} (Classes: {min(class_inds)}-{max(class_inds)}) ===")
         cur_inds = class_inds
@@ -271,123 +274,124 @@ def main(cfg):
                     combined_images = images_cuda
                     combined_labels = labels_cuda
 
-                emb_combined = model(combined_images)
-                pos_combined = anchors_tensor[combined_labels].to(device)
+                with torch.cuda.amp.autocast(enabled=use_amp):
+                    emb_combined = model(combined_images)
+                    pos_combined = anchors_tensor[combined_labels].to(device)
 
-                if cfg.get('original_cvm', False):
-                    neg_idx_list = []
-                    for lbl in combined_labels.cpu().numpy():
-                        choices = [c for c in seen_inds if c != lbl]
-                        neg_idx = random.choice(choices) if len(choices) > 0 else lbl
-                        neg_idx_list.append(neg_idx)
-
-                    neg_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
-                    Lm_unreduced = triplet_loss_emb(emb_combined, pos_combined, neg_tensor, margin=cfg['margin'])
-                    num_new = images_cuda.size(0)
-                    use_active_mean = cfg.get('use_active_mean', True)
-                    if use_active_mean:
-                        Lm_new = get_active_mean(Lm_unreduced[:num_new])
-                    else:
-                        Lm_new = Lm_unreduced[:num_new].mean()
-
-                    if has_buffer:
-                        if use_active_mean:
-                            Lm_buf = get_active_mean(Lm_unreduced[num_new:])
-                        else:
-                            Lm_buf = Lm_unreduced[num_new:].mean()
-                        replay_weight = cfg.get('replay_lambda', 2.0)
-                        Lm = Lm_new + replay_weight * Lm_buf
-                    else:
-                        Lm = Lm_new
-
-                else:
-                    if cfg.get('use_all_seen_negs', False):
-                        if cfg.get('adaptive_margin', False):
-                            Lm = adaptive_margin_triplet_loss_seen_negs(
-                                emb=emb_combined,
-                                pos_emb=pos_combined,
-                                labels=combined_labels,
-                                anchors_tensor=anchors_tensor,
-                                seen_indices=seen_inds,
-                                base_margin=cfg['margin']
-                            )
-                        else:
-                            Lm = triplet_loss_seen_negs(
-                                emb=emb_combined,
-                                pos_emb=pos_combined,
-                                labels=combined_labels,
-                                anchors_tensor=anchors_tensor,
-                                seen_indices=seen_inds,
-                                margin=cfg['margin']
-                            )
-                    else:
-                        K_val = cfg.get('k_negs', 9)
+                    if cfg.get('original_cvm', False):
                         neg_idx_list = []
                         for lbl in combined_labels.cpu().numpy():
                             choices = [c for c in seen_inds if c != lbl]
-                            if len(choices) >= K_val:
-                                negs = random.sample(choices, k=K_val)
-                            else:
-                                negs = random.choices(choices, k=K_val) if len(choices) > 0 else [lbl] * K_val
-                            neg_idx_list.append(negs)
+                            neg_idx = random.choice(choices) if len(choices) > 0 else lbl
+                            neg_idx_list.append(neg_idx)
 
-                        neg_k_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
-
-                        if cfg.get('adaptive_margin', False):
-                            Lm = adaptive_margin_triplet_loss_k_negs(
-                                emb=emb_combined,
-                                pos=pos_combined,
-                                neg_k=neg_k_tensor,
-                                base_margin=cfg['margin']
-                            )
+                        neg_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
+                        Lm_unreduced = triplet_loss_emb(emb_combined, pos_combined, neg_tensor, margin=cfg['margin'])
+                        num_new = images_cuda.size(0)
+                        use_active_mean = cfg.get('use_active_mean', True)
+                        if use_active_mean:
+                            Lm_new = get_active_mean(Lm_unreduced[:num_new])
                         else:
-                            Lm = triplet_loss_k_negs(
-                                emb=emb_combined,
-                                pos_emb=pos_combined,
-                                neg_embs=neg_k_tensor,
-                                margin=cfg['margin']
-                            )
+                            Lm_new = Lm_unreduced[:num_new].mean()
 
-                Ld = torch.tensor(0.0, device=device)
-                if old_anchor_mat is not None and cfg.get('beta', 0.0) > 0:
-                    num_new = images_cuda.size(0)
-                    ld_mode = cfg.get('Ld_mode', 'buf')
-                    replay_weight = cfg.get('replay_lambda', 2.0)
-
-                    if ld_mode == 'buf' and has_buffer:
-                        emb_buf_current = emb_combined[num_new:]
-                        with torch.no_grad():
-                            emb_prev_buf = prev_model(buf_imgs_aug)
-                        Ld_unreduced = semantic_distance_loss(emb_buf_current, emb_prev_buf, old_anchor_mat,
-                                                              reduction='none')
-                        Ld = Ld_unreduced.mean() * replay_weight
-
-                    elif ld_mode == 'new':
-                        emb_new_current = emb_combined[:num_new]
-                        with torch.no_grad():
-                            emb_prev_new = prev_model(images_cuda)
-
-                        Ld_unreduced = semantic_distance_loss(emb_new_current, emb_prev_new, old_anchor_mat,
-                                                              reduction='none')
-                        Ld = Ld_unreduced.mean()
-
-                    elif ld_mode == 'both':
-                        with torch.no_grad():
-                            emb_prev_combined = prev_model(combined_images)
-
-                        Ld_unreduced = semantic_distance_loss(emb_combined, emb_prev_combined, old_anchor_mat,
-                                                              reduction='none')
-
-                        Ld_new = Ld_unreduced[:num_new].mean()
                         if has_buffer:
-                            Ld_buf = Ld_unreduced[num_new:].mean()
-                            Ld = Ld_new + replay_weight * Ld_buf
+                            if use_active_mean:
+                                Lm_buf = get_active_mean(Lm_unreduced[num_new:])
+                            else:
+                                Lm_buf = Lm_unreduced[num_new:].mean()
+                            replay_weight = cfg.get('replay_lambda', 2.0)
+                            Lm = Lm_new + replay_weight * Lm_buf
                         else:
-                            Ld = Ld_new
+                            Lm = Lm_new
 
-                loss = Lm + cfg['beta'] * Ld
+                    else:
+                        if cfg.get('use_all_seen_negs', False):
+                            if cfg.get('adaptive_margin', False):
+                                Lm = adaptive_margin_triplet_loss_seen_negs(
+                                    emb=emb_combined,
+                                    pos_emb=pos_combined,
+                                    labels=combined_labels,
+                                    anchors_tensor=anchors_tensor,
+                                    seen_indices=seen_inds,
+                                    base_margin=cfg['margin']
+                                )
+                            else:
+                                Lm = triplet_loss_seen_negs(
+                                    emb=emb_combined,
+                                    pos_emb=pos_combined,
+                                    labels=combined_labels,
+                                    anchors_tensor=anchors_tensor,
+                                    seen_indices=seen_inds,
+                                    margin=cfg['margin']
+                                )
+                        else:
+                            K_val = cfg.get('k_negs', 9)
+                            neg_idx_list = []
+                            for lbl in combined_labels.cpu().numpy():
+                                choices = [c for c in seen_inds if c != lbl]
+                                if len(choices) >= K_val:
+                                    negs = random.sample(choices, k=K_val)
+                                else:
+                                    negs = random.choices(choices, k=K_val) if len(choices) > 0 else [lbl] * K_val
+                                neg_idx_list.append(negs)
 
-                loss.backward()
+                            neg_k_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
+
+                            if cfg.get('adaptive_margin', False):
+                                Lm = adaptive_margin_triplet_loss_k_negs(
+                                    emb=emb_combined,
+                                    pos=pos_combined,
+                                    neg_k=neg_k_tensor,
+                                    base_margin=cfg['margin']
+                                )
+                            else:
+                                Lm = triplet_loss_k_negs(
+                                    emb=emb_combined,
+                                    pos_emb=pos_combined,
+                                    neg_embs=neg_k_tensor,
+                                    margin=cfg['margin']
+                                )
+
+                    Ld = torch.tensor(0.0, device=device)
+                    if old_anchor_mat is not None and cfg.get('beta', 0.0) > 0:
+                        num_new = images_cuda.size(0)
+                        ld_mode = cfg.get('Ld_mode', 'buf')
+                        replay_weight = cfg.get('replay_lambda', 2.0)
+
+                        if ld_mode == 'buf' and has_buffer:
+                            emb_buf_current = emb_combined[num_new:]
+                            with torch.no_grad():
+                                emb_prev_buf = prev_model(buf_imgs_aug)
+                            Ld_unreduced = semantic_distance_loss(emb_buf_current, emb_prev_buf, old_anchor_mat,
+                                                                  reduction='none')
+                            Ld = Ld_unreduced.mean() * replay_weight
+
+                        elif ld_mode == 'new':
+                            emb_new_current = emb_combined[:num_new]
+                            with torch.no_grad():
+                                emb_prev_new = prev_model(images_cuda)
+
+                            Ld_unreduced = semantic_distance_loss(emb_new_current, emb_prev_new, old_anchor_mat,
+                                                                  reduction='none')
+                            Ld = Ld_unreduced.mean()
+
+                        elif ld_mode == 'both':
+                            with torch.no_grad():
+                                emb_prev_combined = prev_model(combined_images)
+                            Ld_unreduced = semantic_distance_loss(emb_combined, emb_prev_combined, old_anchor_mat,
+                                                                  reduction='none')
+                            Ld_new = Ld_unreduced[:num_new].mean()
+                            if has_buffer:
+                                Ld_buf = Ld_unreduced[num_new:].mean()
+                                Ld = Ld_new + replay_weight * Ld_buf
+                            else:
+                                Ld = Ld_new
+
+                    loss = Lm + cfg['beta'] * Ld
+
+                # loss.backward()
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
 
                 # with torch.no_grad():
                 #     unique_labels = labels.unique()
@@ -396,8 +400,11 @@ def main(cfg):
                 #     model.fc.weight.grad *= sgm_mask.unsqueeze(0)
 
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
-                optimizer.step()
+                # optimizer.step()
                 # buffer.add_batch(raw_images, labels)
+
+                scaler.step(optimizer)
+                scaler.update()
 
                 pbar.update(1)
                 pbar.set_postfix({"Loss": f"{loss.item():.3f}"})
