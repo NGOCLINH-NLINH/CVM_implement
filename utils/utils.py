@@ -201,19 +201,23 @@ def set_seed(seed=1234):
     torch.cuda.manual_seed_all(seed)
 
 
-def triplet_loss_k_negs(emb, pos_emb, neg_embs, margin=0.1):
+def triplet_loss_k_negs(emb, pos_emb, neg_embs, margin=0.1, reduction='none'):
     cos_pos = (emb * pos_emb).sum(dim=1)
     d_pos = 1.0 - cos_pos
 
     cos_neg = (emb.unsqueeze(1) * neg_embs).sum(dim=2)
     d_neg = 1.0 - cos_neg
-    loss = torch.clamp(d_pos.unsqueeze(1) - d_neg + margin, min=0.0)
+    loss_matrix = torch.clamp(d_pos.unsqueeze(1) - d_neg + margin, min=0.0)
     # loss_per_sample = loss_mat.sum(dim=1)
     # return loss_per_sample.mean()
-    return loss.mean()
+    # return loss.mean()
+    loss_per_sample = loss_matrix.mean(dim=1)
+    if reduction == 'none':
+        return loss_per_sample
+    return loss_per_sample.mean()
 
 
-def triplet_loss_seen_negs(emb, pos_emb, labels, anchors_tensor, seen_indices, margin=0.1):
+def triplet_loss_seen_negs(emb, pos_emb, labels, anchors_tensor, seen_indices, margin=0.1, reduction='none'):
     device = emb.device
     anchors_seen = anchors_tensor[seen_indices].to(device)
 
@@ -232,12 +236,20 @@ def triplet_loss_seen_negs(emb, pos_emb, labels, anchors_tensor, seen_indices, m
 
     num_negs = anchors_seen.size(0) - 1
     if num_negs <= 0:
-        return torch.tensor(0.0, device=device, requires_grad=True)
+        loss_per_sample = torch.zeros(emb.size(0), device=device, requires_grad=True)
+    else:
+        loss_per_sample = loss_mat.sum(dim=1) / num_negs
+    if reduction == 'none':
+        return loss_per_sample
+    return loss_per_sample.mean()
 
-    return loss_mat.sum() / (emb.size(0) * num_negs)
+    # if num_negs <= 0:
+    #     return torch.tensor(0.0, device=device, requires_grad=True)
+    #
+    # return loss_mat.sum() / (emb.size(0) * num_negs)
 
 
-def adaptive_margin_triplet_loss_seen_negs(emb, pos_emb, labels, anchors_tensor, seen_indices, base_margin=0.1):
+def adaptive_margin_triplet_loss_seen_negs(emb, pos_emb, labels, anchors_tensor, seen_indices, base_margin=0.1, reduction='none'):
     device = emb.device
     anchors_seen = anchors_tensor[seen_indices].to(device)
 
@@ -257,9 +269,13 @@ def adaptive_margin_triplet_loss_seen_negs(emb, pos_emb, labels, anchors_tensor,
 
     num_negs = anchors_seen.size(0) - 1
     if num_negs <= 0:
-        return torch.tensor(0.0, device=device, requires_grad=True)
+        loss_per_sample = torch.zeros(emb.size(0), device=device, requires_grad=True)
+    else:
+        loss_per_sample = loss_mat.sum(dim=1) / num_negs
 
-    return loss_mat.sum() / (emb.size(0) * num_negs)
+    if reduction == 'none':
+        return loss_per_sample
+    return loss_per_sample.mean()
 
 
 def anchor_attraction_loss(emb, pos_emb):
@@ -286,22 +302,23 @@ def image_side_prototype_spread_loss(emb, labels, anchors_tensor, seen_indices, 
     return loss_mat.sum() / (emb.size(0) * num_negs)
 
 
-def adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k, base_margin=0.1, reduction="mean"):
+def adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k, base_margin=0.1, reduction="none"):
     sim_pos = (emb * pos).sum(dim=1, keepdim=True)
     sim_neg = (emb.unsqueeze(1) * neg_k).sum(dim=2)
-
     anchor_sim = (pos.unsqueeze(1) * neg_k).sum(dim=2)
 
     adaptive_margin = base_margin * (1.0 - anchor_sim).clamp(min=0.0)
-    loss = F.relu(sim_neg - sim_pos + adaptive_margin)
-    # loss_per_sample = loss_mat.sum(dim=1)
-    # return loss_per_sample.mean()
-    if reduction == "mean":
-        return loss.mean()
+    loss_matrix = F.relu(sim_neg - sim_pos + adaptive_margin)
+    loss_per_sample = loss_matrix.mean(dim=1)
+
+    if reduction == "none":
+        return loss_per_sample
+    elif reduction == "mean":
+        return loss_per_sample.mean()
     elif reduction == "sum":
-        return loss.sum()
+        return loss_per_sample.sum()
     else:
-        return loss
+        return loss_matrix
 
 
 # def make_cifar100_tasks(num_tasks, batch_size, augment=True):

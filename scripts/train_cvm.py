@@ -238,7 +238,6 @@ def main(cfg):
         optimizer = optim.SGD(model.parameters(), lr=cfg['lr'], momentum=cfg['momentum'],
                               weight_decay=cfg['weight_decay'])
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=cfg.get('milestones', [50, 75]), gamma=0.1)
-
         total_steps = cfg['epochs_per_task'] * len(train_loader)
         pbar = tqdm(total=total_steps, desc=f"Task {t}", dynamic_ncols=True)
 
@@ -250,8 +249,6 @@ def main(cfg):
 
                 images_cuda = images.to(device)
                 labels_cuda = labels.to(device)
-                # pos = anchors_tensor[labels_cuda].to(device)
-
                 if prev_model is not None and len(old_inds) > 0:
                     old_anchor_mat = anchors_tensor[old_inds].to(device)
                 else:
@@ -287,42 +284,20 @@ def main(cfg):
 
                         neg_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
                         Lm_unreduced = triplet_loss_emb(emb_combined, pos_combined, neg_tensor, margin=cfg['margin'])
-                        num_new = images_cuda.size(0)
-                        use_active_mean = cfg.get('use_active_mean', True)
-                        if use_active_mean:
-                            Lm_new = get_active_mean(Lm_unreduced[:num_new])
-                        else:
-                            Lm_new = Lm_unreduced[:num_new].mean()
-
-                        if has_buffer:
-                            if use_active_mean:
-                                Lm_buf = get_active_mean(Lm_unreduced[num_new:])
-                            else:
-                                Lm_buf = Lm_unreduced[num_new:].mean()
-                            replay_weight = cfg.get('replay_lambda', 2.0)
-                            Lm = Lm_new + replay_weight * Lm_buf
-                        else:
-                            Lm = Lm_new
 
                     else:
                         if cfg.get('use_all_seen_negs', False):
                             if cfg.get('adaptive_margin', False):
-                                Lm = adaptive_margin_triplet_loss_seen_negs(
-                                    emb=emb_combined,
-                                    pos_emb=pos_combined,
-                                    labels=combined_labels,
-                                    anchors_tensor=anchors_tensor,
-                                    seen_indices=seen_inds,
-                                    base_margin=cfg['margin']
+                                Lm_unreduced = adaptive_margin_triplet_loss_seen_negs(
+                                    emb=emb_combined, pos_emb=pos_combined, labels=combined_labels,
+                                    anchors_tensor=anchors_tensor, seen_indices=seen_inds,
+                                    base_margin=cfg['margin'], reduction='none'
                                 )
                             else:
-                                Lm = triplet_loss_seen_negs(
-                                    emb=emb_combined,
-                                    pos_emb=pos_combined,
-                                    labels=combined_labels,
-                                    anchors_tensor=anchors_tensor,
-                                    seen_indices=seen_inds,
-                                    margin=cfg['margin']
+                                Lm_unreduced = triplet_loss_seen_negs(
+                                    emb=emb_combined, pos_emb=pos_combined, labels=combined_labels,
+                                    anchors_tensor=anchors_tensor, seen_indices=seen_inds,
+                                    margin=cfg['margin'], reduction='none'
                                 )
                         else:
                             K_val = cfg.get('k_negs', 9)
@@ -338,19 +313,32 @@ def main(cfg):
                             neg_k_tensor = anchors_tensor[torch.tensor(neg_idx_list, dtype=torch.long, device=device)]
 
                             if cfg.get('adaptive_margin', False):
-                                Lm = adaptive_margin_triplet_loss_k_negs(
-                                    emb=emb_combined,
-                                    pos=pos_combined,
-                                    neg_k=neg_k_tensor,
-                                    base_margin=cfg['margin']
+                                Lm_unreduced = adaptive_margin_triplet_loss_k_negs(
+                                    emb=emb_combined, pos=pos_combined, neg_k=neg_k_tensor,
+                                    base_margin=cfg['margin'], reduction='none'
                                 )
                             else:
-                                Lm = triplet_loss_k_negs(
-                                    emb=emb_combined,
-                                    pos_emb=pos_combined,
-                                    neg_embs=neg_k_tensor,
-                                    margin=cfg['margin']
+                                Lm_unreduced = triplet_loss_k_negs(
+                                    emb=emb_combined, pos_emb=pos_combined, neg_embs=neg_k_tensor,
+                                    margin=cfg['margin'], reduction='none'
                                 )
+
+                    num_new = images_cuda.size(0)
+                    use_active_mean = cfg.get('use_active_mean', True)
+                    if use_active_mean:
+                        Lm_new = get_active_mean(Lm_unreduced[:num_new])
+                    else:
+                        Lm_new = Lm_unreduced[:num_new].mean()
+
+                    if has_buffer:
+                        if use_active_mean:
+                            Lm_buf = get_active_mean(Lm_unreduced[num_new:])
+                        else:
+                            Lm_buf = Lm_unreduced[num_new:].mean()
+                        replay_weight = cfg.get('replay_lambda', 2.0)
+                        Lm = Lm_new + replay_weight * Lm_buf
+                    else:
+                        Lm = Lm_new
 
                     Ld = torch.tensor(0.0, device=device)
                     if old_anchor_mat is not None and cfg.get('beta', 0.0) > 0:
@@ -413,7 +401,6 @@ def main(cfg):
         pbar.close()
 
         print("Updating Replay Buffer...")
-        # buffer.update_buffer(model, train_loader, cur_inds, device)
         for _, raw_images, labels in train_loader:
             buffer.add_batch(raw_images, labels)
 
