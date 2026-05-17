@@ -24,7 +24,7 @@ from models.resnet_cvm import ResNetCVM
 from utils.utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, \
     set_seed, triplet_loss_k_negs, triplet_loss_seen_negs, image_side_prototype_spread_loss, \
     adaptive_margin_triplet_loss_k_negs, get_semantic_mask, adaptive_margin_triplet_loss_seen_negs, \
-    triplet_loss_hardest_neg, HerdingBuffer, get_active_mean
+    triplet_loss_hardest_neg, HerdingBuffer, get_active_mean, ClassBalancedRandomBuffer
 
 replay_transform = transforms.Compose([
     transforms.RandomCrop(32, padding=4),
@@ -215,7 +215,7 @@ def main(cfg):
                       sparsity_ratio=cfg['sparsity_ratio']).to(device)
     prev_model = None
 
-    buffer = ReservoirBuffer(capacity=cfg['memory_size'])
+    buffer = ClassBalancedRandomBuffer(capacity=cfg['memory_size'], seed=cfg.get('seed', 1234))
 
     seen_inds = []
 
@@ -401,9 +401,10 @@ def main(cfg):
             scheduler.step()
         pbar.close()
 
-        print("Updating Replay Buffer...")
-        for _, raw_images, labels in train_loader:
-            buffer.add_batch(raw_images, labels)
+        # print("Updating Replay Buffer...")
+        # for _, raw_images, labels in train_loader:
+        #     buffer.add_batch(raw_images, labels)
+        buffer.update_buffer(train_loader, cur_inds)
 
         prev_model = copy.deepcopy(model).eval().to(device)
 

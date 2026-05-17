@@ -71,6 +71,48 @@ class ReservoirBuffer:
         return len(self.buffer)
 
 
+class ClassBalancedRandomBuffer:
+    def __init__(self, capacity=500, seed=1234):
+        self.capacity = capacity
+        self.memory = {}
+        self.rng = random.Random(seed)
+
+    def update_buffer(self, dataloader, class_inds):
+        all_imgs = {c: [] for c in class_inds}
+        for _, raw_images, labels in dataloader:
+            for i in range(len(labels)):
+                lbl = int(labels[i].item())
+                if lbl in class_inds:
+                    all_imgs[lbl].append((raw_images[i].clone(), lbl))
+        for c in class_inds:
+            self.rng.shuffle(all_imgs[c])
+            self.memory[c] = all_imgs[c]
+        num_seen_classes = len(self.memory)
+        m_per_class = self.capacity // num_seen_classes
+
+        for c in self.memory.keys():
+            self.memory[c] = self.memory[c][:m_per_class]
+
+    def sample(self, batch_size):
+        if len(self.memory) == 0:
+            return None, None
+
+        all_items = []
+        for c_items in self.memory.values():
+            all_items.extend(c_items)
+
+        if len(all_items) == 0:
+            return None, None
+
+        batch = random.sample(all_items, k=min(batch_size, len(all_items)))
+        imgs = torch.stack([b[0] for b in batch])
+        labels = torch.tensor([b[1] for b in batch], dtype=torch.long)
+        return imgs, labels
+
+    def __len__(self):
+        return sum([len(v) for v in self.memory.values()])
+
+
 def get_active_mean(loss_slice):
     active = loss_slice[loss_slice > 0]
     if len(active) > 0:
@@ -137,9 +179,10 @@ def semantic_distance_loss(emb, emb_prev, old_anchor_matrix, reduction='mean'):
     cos_prev = emb_prev @ old_anchor_matrix.t()
     d_t = 1.0 - cos_t
     d_prev = 1.0 - cos_prev
-    loss_matrix = F.mse_loss(d_t, d_prev, reduction='none')
-    loss_per_sample = loss_matrix.mean(dim=1)
-
+    # loss_matrix = F.mse_loss(d_t, d_prev, reduction='none')
+    # loss_per_sample = loss_matrix.mean(dim=1)
+    loss_matrix = (d_t - d_prev) ** 2
+    loss_per_sample = loss_matrix.sum(dim=1)
     if reduction == 'none':
         return loss_per_sample
     return loss_per_sample.mean()
