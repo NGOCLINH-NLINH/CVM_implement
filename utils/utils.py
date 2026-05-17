@@ -180,8 +180,12 @@ def semantic_distance_loss(emb, emb_prev, old_anchor_matrix, reduction='mean'):
     cos_prev = emb_prev @ old_anchor_matrix.t()
     d_t = 1.0 - cos_t
     d_prev = 1.0 - cos_prev
-    loss_matrix = F.mse_loss(d_t, d_prev, reduction='none')
-    loss_per_sample = loss_matrix.mean(dim=1)
+
+    loss_matrix = torch.abs(d_t - d_prev)
+    loss_per_sample = loss_matrix.sum(dim=1)
+
+    # loss_matrix = F.mse_loss(d_t, d_prev, reduction='none')
+    # loss_per_sample = loss_matrix.mean(dim=1)
     # loss_matrix = (d_t - d_prev) ** 2
     # loss_per_sample = loss_matrix.sum(dim=1)
     if reduction == 'none':
