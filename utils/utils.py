@@ -442,6 +442,33 @@ def get_semantic_mask(batch_anchors, hash_mat, sparsity=0.4):
     return batch_mask
 
 
+def cross_modal_mixup_loss(model, buf_imgs, buf_labels, anchors_tensor, alpha=0.4):
+    device = buf_imgs.device
+    batch_size = buf_imgs.size(0)
+
+    if batch_size < 2:
+        return torch.tensor(0.0, device=device)
+
+    if alpha > 0:
+        lam = np.random.beta(alpha, alpha)
+    else:
+        lam = 1.0
+
+    index = torch.randperm(batch_size).to(device)
+    mixed_imgs = lam * buf_imgs + (1 - lam) * buf_imgs[index]
+
+    anchors_A = anchors_tensor[buf_labels]
+    anchors_B = anchors_tensor[buf_labels[index]]
+
+    mixed_anchors = lam * anchors_A + (1 - lam) * anchors_B
+    mixed_anchors = F.normalize(mixed_anchors, p=2, dim=1)
+    mixed_emb = model(mixed_imgs)
+    cos_sim = (mixed_emb * mixed_anchors).sum(dim=1)
+    loss = (1.0 - cos_sim).mean()
+
+    return loss
+
+
 class HerdingBuffer:
     def __init__(self, capacity=500):
         self.capacity = capacity

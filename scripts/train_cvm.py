@@ -24,7 +24,7 @@ from models.resnet_cvm import ResNetCVM
 from utils.utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semantic_distance_loss, make_cifar100_tasks, \
     set_seed, triplet_loss_k_negs, triplet_loss_seen_negs, image_side_prototype_spread_loss, \
     adaptive_margin_triplet_loss_k_negs, get_semantic_mask, adaptive_margin_triplet_loss_seen_negs, \
-    triplet_loss_hardest_neg, HerdingBuffer, get_active_mean, ClassBalancedRandomBuffer
+    triplet_loss_hardest_neg, HerdingBuffer, get_active_mean, ClassBalancedRandomBuffer, cross_modal_mixup_loss
 
 replay_transform = transforms.Compose([
     transforms.RandomCrop(32, padding=4),
@@ -377,6 +377,19 @@ def main(cfg):
                                 Ld = Ld_new
 
                     loss = Lm + cfg['beta'] * Ld
+
+                    use_cmm = cfg.get('use_cmm', True)
+                    if has_buffer and use_cmm:
+                        lambda_cmm = cfg.get('lambda_cmm', 1.0)
+                        alpha_cmm = cfg.get('alpha_cmm', 0.4)
+                        L_cmm = cross_modal_mixup_loss(
+                            model=model,
+                            buf_imgs=buf_imgs_aug,
+                            buf_labels=buf_labels,
+                            anchors_tensor=anchors_tensor,
+                            alpha=alpha_cmm
+                        )
+                        loss = loss + lambda_cmm * L_cmm
 
                 # loss.backward()
                 scaler.scale(loss).backward()
