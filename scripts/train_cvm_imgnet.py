@@ -35,7 +35,7 @@ replay_transform = transforms.Compose([
 
 
 def evaluate_all_seen(model, test_full, seen_indices, anchors_tensor, anchor_keys, device):
-    idxs = [i for i, (_, lbl) in enumerate(test_full) if lbl in seen_indices]
+    idxs = [i for i, lbl in enumerate(test_full.targets) if lbl in seen_indices]
     if len(idxs) == 0:
         return 0.0
     loader = DataLoader(Subset(test_full, idxs), batch_size=128, shuffle=False, num_workers=2)
@@ -80,7 +80,7 @@ def evaluate_task_full_anchors(model, test_full, task_class_inds, anchors_tensor
 
 
 def evaluate_task_seen_anchors(model, test_full, task_class_inds, seen_indices, anchors_tensor, device):
-    idxs = [i for i, (_, lbl) in enumerate(test_full) if lbl in task_class_inds]
+    idxs = [i for i, lbl in enumerate(test_full.targets) if lbl in task_class_inds]
     if len(idxs) == 0:
         return 0.0
     loader = DataLoader(Subset(test_full, idxs), batch_size=128, shuffle=False, num_workers=2)
@@ -108,8 +108,8 @@ def evaluate_task_seen_anchors(model, test_full, task_class_inds, seen_indices, 
 def zero_shot_eval(model, anchors_tensor, unseen_indices, test_full, device):
     if len(unseen_indices) == 0:
         return 0.0
-    loader = DataLoader(Subset(test_full, [i for i, (_, l) in enumerate(test_full) if l in unseen_indices]),
-                        batch_size=128, shuffle=False, num_workers=2)
+    idxs = [i for i, l in enumerate(test_full.targets) if l in unseen_indices]
+    loader = DataLoader(Subset(test_full, idxs), batch_size=128, shuffle=False, num_workers=2)
     anchors_unseen = anchors_tensor[unseen_indices].to(device)
     correct = 0
     total = 0
