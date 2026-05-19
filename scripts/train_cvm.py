@@ -212,7 +212,7 @@ def main(cfg):
     print("Loaded anchors:", len(anchor_keys))
 
     model = ResNetCVM(out_dim=cfg['out_dim'], pretrained=cfg.get('pretrained_backbone', False),
-                      sparsity_ratio=cfg['sparsity_ratio']).to(device)
+                      sparsity_ratio=cfg['sparsity_ratio'], leak=cfg.get('leak', 0.05)).to(device)
     prev_model = None
 
     buffer = ReservoirBuffer(capacity=cfg['memory_size'], seed=cfg.get('seed', 1234))

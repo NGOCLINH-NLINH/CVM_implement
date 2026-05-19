@@ -21,7 +21,7 @@ class ResNetCVM(nn.Module):
         nn.init.zeros_(self.fc.bias)
 
         self.sparsity_ratio = sparsity_ratio
-        # self.leak = leak
+        self.leak = leak
 
     def forward(self, x):
         x = self.features(x)
@@ -31,16 +31,16 @@ class ResNetCVM(nn.Module):
         if self.sparsity_ratio < 1.0:
             k = max(1, int(x.size(1) * self.sparsity_ratio))
 
-            # # leaky sprarsity
-            # _, idx = torch.topk(x, k, dim=1)
-            # mask = torch.full_like(x, self.leak)
-            # mask.scatter_(1, idx, 1.0)
-            # x = x * mask
+            # leaky sprarsity
+            _, idx = torch.topk(x, k, dim=1)
+            mask = torch.full_like(x, self.leak)
+            mask.scatter_(1, idx, 1.0)
+            x = x * mask
 
-            # hard sparsity
-            val, idx = torch.topk(x, k, dim=1)
-            sparse_x = torch.zeros_like(x).scatter_(1, idx, val)
-            x = sparse_x
+            # # hard sparsity
+            # val, idx = torch.topk(x, k, dim=1)
+            # sparse_x = torch.zeros_like(x).scatter_(1, idx, val)
+            # x = sparse_x
 
         x = self.fc(x)
         x = F.normalize(x, p=2, dim=1)
