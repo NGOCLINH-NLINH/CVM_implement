@@ -1,4 +1,6 @@
 # utils.py
+import os
+
 import torch
 import torch.nn.functional as F
 import numpy as np
@@ -192,6 +194,59 @@ def semantic_distance_loss(emb, emb_prev, old_anchor_matrix, reduction='mean'):
     if reduction == 'none':
         return loss_per_sample
     return loss_per_sample.mean()
+
+
+def make_tinyimagenet_tasks(num_tasks, batch_size, augment=True, root="data/tiny-imagenet-200"):
+    norm = transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+
+    if augment:
+        transform_train_aug = transforms.Compose([
+            transforms.RandomCrop(64, padding=8),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            norm
+        ])
+    else:
+        transform_train_aug = transforms.Compose([
+            transforms.ToTensor(),
+            norm
+        ])
+
+    transform_raw = transforms.ToTensor()
+    transform_test = transforms.Compose([
+        transforms.ToTensor(),
+        norm
+    ])
+
+    train_full_raw = datasets.ImageFolder(os.path.join(root, 'train'), transform=None)
+    test_full = datasets.ImageFolder(os.path.join(root, 'val/images_formatted'), transform=transform_test)
+
+    train_dataset_wrapper = DualTransformDataset(train_full_raw, transform_train_aug, transform_raw)
+
+    classes = train_full_raw.classes
+    num_classes = len(classes)
+    per_task = num_classes // num_tasks
+    tasks = []
+
+    all_targets = np.array(train_full_raw.targets)
+    all_test_targets = np.array(test_full.targets)
+
+    for t in range(num_tasks):
+        start = t * per_task
+        end = start + per_task if t < num_tasks - 1 else num_classes
+
+        train_idx = np.where((all_targets >= start) & (all_targets < end))[0]
+        test_idx = np.where((all_test_targets >= start) & (all_test_targets < end))[0]
+
+        train_subset = Subset(train_dataset_wrapper, train_idx)
+        test_subset = Subset(test_full, test_idx)
+
+        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=4)
+        test_loader = DataLoader(test_subset, batch_size=batch_size, shuffle=False, num_workers=4)
+
+        tasks.append((train_loader, test_loader, list(range(start, end))))
+
+    return tasks, classes
 
 
 def make_cifar100_tasks(num_tasks, batch_size, augment=True):
