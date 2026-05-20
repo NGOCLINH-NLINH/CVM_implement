@@ -455,7 +455,7 @@ def main(cfg):
             "margin": cfg['margin'],
             "adaptive_margin": cfg.get('adaptive_margin', False),
             "memory_size": cfg['memory_size'],
-            "use_all_seen_negs": cfg.get['use_all_seen_negs', True],
+            "use_all_seen_negs": cfg.get('use_all_seen_negs', False),
             "use_active_mean": cfg.get('use_active_mean', True),
             "use_cmm": cfg.get('use_cmm', False),
         },
