@@ -407,9 +407,9 @@ def main(cfg):
             zero_shot_history.append(zs)
             print(f"Zero-shot acc on unseen classes after task {t}: {zs:.4f}")
 
-            lp_acc = linear_probe_unseen(model, train_full, test_full, unseen_inds, device)
-            linear_probe_history.append(lp_acc)
-            print(f"Linear probe acc on unseen classes after task {t}: {lp_acc:.4f}")
+            # lp_acc = linear_probe_unseen(model, train_full, test_full, unseen_inds, device)
+            # linear_probe_history.append(lp_acc)
+            # print(f"Linear probe acc on unseen classes after task {t}: {lp_acc:.4f}")
         else:
             print(f"No unseen classes left to evaluate Forward Transfer after task {t}.")
 
