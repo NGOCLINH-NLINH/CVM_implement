@@ -125,11 +125,10 @@ def zero_shot_eval(model, anchors_tensor, unseen_indices, test_full, device):
     return correct / total if total > 0 else 0.0
 
 
-def linear_probe_all(model, train_full, test_full, seen_indices, device, out_dim):
+def linear_probe_unseen(model, train_full, test_full, unseen_indices, device):
     model.eval()
-
-    train_idx = [i for i, (_, l) in enumerate(train_full) if l in seen_indices]
-    test_idx = [i for i, (_, l) in enumerate(test_full) if l in seen_indices]
+    train_idx = [i for i, (_, l) in enumerate(train_full) if l in unseen_indices]
+    test_idx = [i for i, (_, l) in enumerate(test_full) if l in unseen_indices]
 
     if len(train_idx) == 0 or len(test_idx) == 0:
         return 0.0
@@ -139,8 +138,6 @@ def linear_probe_all(model, train_full, test_full, seen_indices, device, out_dim
 
     X_tr, y_tr = [], []
     X_te, y_te = [], []
-
-    # Extract features
     with torch.no_grad():
         for images, labels in loader_tr:
             images = images.to(device)
@@ -182,15 +179,7 @@ def compute_forgetting(eval_history):
 def main(cfg):
     set_seed(cfg.get('seed', 1234))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # hash_matrix = torch.randn(384, 512, device=device)
     print("Device:", device)
-
-    # print(f"\n{'=' * 50}")
-    # print(f"EXPERIMENT: {cfg['exp_name']} | SEED: {cfg['seed']}")
-    # print(
-    #     f"PARAMS: Beta={cfg['beta']}, Spread={cfg['spread_lambda']}, Adaptive={cfg['adaptive_margin']}, Margin={cfg['margin']}")
-    # print(f"DEVICE: {device}")
-    # print(f"{'=' * 50}\n")
 
     tasks, class_names = make_cifar100_tasks(cfg['num_tasks'], cfg['batch_size'], augment=True)
     train_full = datasets.CIFAR100(root="data", train=True, download=True, transform=transforms.Compose([
@@ -211,8 +200,7 @@ def main(cfg):
     anchor_keys, anchors_tensor = load_anchors(cfg['anchors_path'], device=device)
     print("Loaded anchors:", len(anchor_keys))
 
-    model = ResNetCVM(out_dim=cfg['out_dim'], pretrained=cfg.get('pretrained_backbone', False),
-                      sparsity_ratio=cfg['sparsity_ratio']).to(device)
+    model = ResNetCVM(out_dim=cfg['out_dim'], pretrained=cfg.get('pretrained_backbone', False)).to(device)
     prev_model = None
 
     buffer = ReservoirBuffer(capacity=cfg['memory_size'], seed=cfg.get('seed', 1234))
@@ -378,7 +366,7 @@ def main(cfg):
 
                     loss = Lm + cfg['beta'] * Ld
 
-                    use_cmm = cfg.get('use_cmm', True)
+                    use_cmm = cfg.get('use_cmm', False)
                     if has_buffer and use_cmm:
                         lambda_cmm = cfg.get('lambda_cmm', 1.0)
                         alpha_cmm = cfg.get('alpha_cmm', 0.4)
@@ -391,19 +379,10 @@ def main(cfg):
                         )
                         loss = loss + lambda_cmm * L_cmm
 
-                # loss.backward()
                 scaler.scale(loss).backward()
                 scaler.unscale_(optimizer)
 
-                # with torch.no_grad():
-                #     unique_labels = labels.unique()
-                #     batch_anchors = anchors_tensor[unique_labels]
-                #     sgm_mask = get_semantic_mask(batch_anchors, hash_matrix, sparsity=cfg.get('sparsity_mask', 0.40))
-                #     model.fc.weight.grad *= sgm_mask.unsqueeze(0)
-
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=cfg.get('max_norm', 5.0))
-                # optimizer.step()
-                # buffer.add_batch(raw_images, labels)
 
                 scaler.step(optimizer)
                 scaler.update()
@@ -427,14 +406,17 @@ def main(cfg):
         seen_acc_history.append(acc_all_seen)
         print(f"Acc on all seen classes after task {t}: {acc_all_seen:.4f}")
 
-        # lp_acc = linear_probe_all(model, train_full, test_full, seen_inds, device, cfg['out_dim'])
-        # linear_probe_history.append(lp_acc)
-        # print(f"Linear probe acc on seen classes after task {t}: {lp_acc:.4f}")
-
         unseen_inds = [i for i in range(len(anchor_keys)) if i not in seen_inds]
-        zs = zero_shot_eval(model, anchors_tensor, unseen_inds, test_full, device)
-        zero_shot_history.append(zs)
-        print(f"Zero-shot acc on unseen classes after task {t}: {zs:.4f}")
+        if len(unseen_inds) > 0:
+            zs = zero_shot_eval(model, anchors_tensor, unseen_inds, test_full, device)
+            zero_shot_history.append(zs)
+            print(f"Zero-shot acc on unseen classes after task {t}: {zs:.4f}")
+
+            lp_acc = linear_probe_unseen(model, train_full, test_full, unseen_inds, device)
+            linear_probe_history.append(lp_acc)
+            print(f"Linear probe acc on unseen classes after task {t}: {lp_acc:.4f}")
+        else:
+            print(f"No unseen classes left to evaluate Forward Transfer after task {t}.")
 
         per_task_accs = []
         for i_task, (_, _, t_classes) in enumerate(tasks):
@@ -455,32 +437,46 @@ def main(cfg):
     print(f"Avg Accuracy: {avg_acc_final:.4f}")
     print(f"Forgetting: {forgetting_score:.4f}")
 
-    # results = {
-    #     "exp_name": cfg['exp_name'],
-    #     "seed": cfg['seed'],
-    #     "config": {
-    #         "beta": cfg['beta'],
-    #         "spread_lambda": cfg['spread_lambda'],
-    #         "margin": cfg['margin'],
-    #         "adaptive_margin": cfg['adaptive_margin'],
-    #         "memory_size": cfg['memory_size']
-    #     },
-    #     "seen_acc_history": [float(x) for x in seen_acc_history],
-    #     "linear_probe_history": [float(x) for x in linear_probe_history],
-    #     "zero_shot_history": [float(x) for x in zero_shot_history],
-    #
-    #     "avg_acc_over_time": float(avg_acc_final),
-    #     "forgetting": float(fw_score),
-    #     "eval_matrix": [[float(x) if x is not None else None for x in row] for row in eval_history]
-    # }
-    #
-    # log_filename = f"log_{cfg['exp_name']}_seed{cfg['seed']}.json"
-    # log_path = os.path.join(cfg['checkpoints_dir'], log_filename)
-    #
-    # with open(log_path, 'w') as f:
-    #     json.dump(results, f, indent=4)
-    #
-    # print(f"Saved detailed logs to: {log_path}")
+    if len(linear_probe_history) > 0:
+        fw_score = np.mean(linear_probe_history)
+        avg_zero_shot = np.mean(zero_shot_history)
+    else:
+        fw_score = 0.0
+        avg_zero_shot = 0.0
+
+    print(f"FW_Score (Linear Probe on Unseen): {fw_score:.4f}")
+    print(f"Avg Zero-Shot on Unseen: {avg_zero_shot:.4f}")
+
+    results = {
+        "exp_name": cfg['exp_name'],
+        "seed": cfg['seed'],
+        "config": {
+            "beta": cfg['beta'],
+            "margin": cfg['margin'],
+            "adaptive_margin": cfg.get('adaptive_margin', False),
+            "memory_size": cfg['memory_size'],
+            "use_all_seen_negs": cfg.get['use_all_seen_negs', True],
+            "use_active_mean": cfg.get('use_active_mean', True),
+            "use_cmm": cfg.get('use_cmm', False),
+        },
+        "seen_acc_history": [float(x) for x in seen_acc_history],
+        "linear_probe_history": [float(x) for x in linear_probe_history],
+        "zero_shot_history": [float(x) for x in zero_shot_history],
+
+        "avg_acc_over_time": float(avg_acc_final),
+        "forgetting_score": float(forgetting_score),
+        "fw_score": float(fw_score),
+
+        "eval_matrix": [[float(x) if x is not None else None for x in row] for row in eval_history]
+    }
+
+    log_filename = f"log_{cfg['exp_name']}_seed{cfg['seed']}.json"
+    log_path = os.path.join(cfg['checkpoints_dir'], log_filename)
+
+    with open(log_path, 'w') as f:
+        json.dump(results, f, indent=4)
+
+    print(f"Saved detailed logs to: {log_path}")
 
 
 if __name__ == "__main__":
