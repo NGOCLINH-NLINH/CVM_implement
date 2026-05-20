@@ -155,7 +155,7 @@ def linear_probe_unseen(model, train_full, test_full, unseen_indices, device):
     X_te = np.concatenate(X_te, axis=0)
     y_te = np.concatenate(y_te, axis=0)
 
-    clf = LogisticRegression(max_iter=1000, multi_class='multinomial', solver='lbfgs', n_jobs=-1)
+    clf = LogisticRegression(max_iter=1000, solver='lbfgs', n_jobs=-1)
     clf.fit(X_tr, y_tr)
     preds = clf.predict(X_te)
 
