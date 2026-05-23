@@ -160,20 +160,6 @@ def triplet_loss_hardest_neg(emb, pos_emb, labels, anchors_tensor, seen_indices,
 
     return hardest_losses.mean()
 
-
-# def semantic_distance_loss(emb, emb_prev, old_anchor_matrix):
-#     if old_anchor_matrix is None or old_anchor_matrix.shape[0] == 0:
-#         return torch.tensor(0.0, device=emb.device)
-#     cos_t = emb @ old_anchor_matrix.t()
-#     cos_prev = emb_prev @ old_anchor_matrix.t()
-#     d_t = 1.0 - cos_t
-#     d_prev = 1.0 - cos_prev
-#     # return F.l1_loss(d_t, d_prev)
-#     return F.mse_loss(d_t, d_prev)
-#     # return ((d_t - d_prev) ** 2).sum(dim=1).mean()
-#     # return torch.abs(d_t - d_prev).mean()
-#     # return torch.abs(d_t - d_prev).sum(dim=1).mean()
-
 def semantic_distance_loss(emb, emb_prev, old_anchor_matrix, reduction='mean'):
     if old_anchor_matrix is None or old_anchor_matrix.shape[0] == 0:
         return torch.tensor(0.0, device=emb.device)
@@ -429,62 +415,6 @@ def adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k, base_margin=0.1, reduct
         return loss_per_sample.sum()
     else:
         return loss_matrix
-
-
-# def make_cifar100_tasks(num_tasks, batch_size, augment=True):
-#     if augment:
-#         transform_train_aug = transforms.Compose([
-#             transforms.Resize(224),
-#             transforms.RandomCrop(224, padding=28),
-#             transforms.RandomHorizontalFlip(),
-#             transforms.ToTensor(),
-#             transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
-#         ])
-#     else:
-#         transform_train_aug = transforms.Compose([
-#             transforms.Resize(224),
-#             transforms.ToTensor(),
-#             transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
-#         ])
-#
-#     transform_raw = transforms.Compose([
-#         transforms.Resize(224),
-#         transforms.ToTensor(),
-#         transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
-#     ])
-#
-#     transform_test = transforms.Compose([
-#         transforms.Resize(224),
-#         transforms.ToTensor(),
-#         transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
-#     ])
-#
-#     train_full_raw = datasets.CIFAR100(root="data", train=True, download=True, transform=None)
-#     test_full = datasets.CIFAR100(root="data", train=False, download=True, transform=transform_test)
-#
-#     train_dataset_wrapper = DualTransformDataset(train_full_raw, transform_train_aug, transform_raw)
-#
-#     classes = train_full_raw.classes
-#     num_classes = len(classes)
-#     per_task = num_classes // num_tasks
-#     tasks = []
-#
-#     all_targets = np.array(train_full_raw.targets)
-#     all_test_targets = np.array(test_full.targets)
-#
-#     for t in range(num_tasks):
-#         start = t * per_task
-#         end = start + per_task if t < num_tasks - 1 else num_classes
-#
-#         train_idx = np.where((all_targets >= start) & (all_targets < end))[0]
-#         test_idx = np.where((all_test_targets >= start) & (all_test_targets < end))[0]
-#
-#         train_subset = Subset(train_dataset_wrapper, train_idx)
-#         test_subset = Subset(test_full, test_idx)
-#         train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=2)
-#         test_loader = DataLoader(test_subset, batch_size=batch_size, shuffle=False, num_workers=2)
-#         tasks.append((train_loader, test_loader, list(range(start, end))))
-#     return tasks, classes
 
 def get_semantic_mask(batch_anchors, hash_mat, sparsity=0.4):
     h = torch.matmul(batch_anchors, hash_mat)

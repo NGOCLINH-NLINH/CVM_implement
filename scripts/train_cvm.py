@@ -406,17 +406,17 @@ def main(cfg):
         seen_acc_history.append(acc_all_seen)
         print(f"Acc on all seen classes after task {t}: {acc_all_seen:.4f}")
 
-        # unseen_inds = [i for i in range(len(anchor_keys)) if i not in seen_inds]
-        # if len(unseen_inds) > 0:
-        #     zs = zero_shot_eval(model, anchors_tensor, unseen_inds, test_full, device)
-        #     zero_shot_history.append(zs)
-        #     print(f"Zero-shot acc on unseen classes after task {t}: {zs:.4f}")
-        #
-        #     lp_acc = linear_probe_unseen(model, train_full, test_full, unseen_inds, device)
-        #     linear_probe_history.append(lp_acc)
-        #     print(f"Linear probe acc on unseen classes after task {t}: {lp_acc:.4f}")
-        # else:
-        #     print(f"No unseen classes left to evaluate Forward Transfer after task {t}.")
+        unseen_inds = [i for i in range(len(anchor_keys)) if i not in seen_inds]
+        if len(unseen_inds) > 0:
+            zs = zero_shot_eval(model, anchors_tensor, unseen_inds, test_full, device)
+            zero_shot_history.append(zs)
+            print(f"Zero-shot acc on unseen classes after task {t}: {zs:.4f}")
+
+            lp_acc = linear_probe_unseen(model, train_full, test_full, unseen_inds, device)
+            linear_probe_history.append(lp_acc)
+            print(f"Linear probe acc on unseen classes after task {t}: {lp_acc:.4f}")
+        else:
+            print(f"No unseen classes left to evaluate Forward Transfer after task {t}.")
 
         per_task_accs = []
         for i_task, (_, _, t_classes) in enumerate(tasks):
