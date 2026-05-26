@@ -3,7 +3,7 @@ seed: 1234
 num_tasks: 10
 batch_size: 32
 epochs_per_task: 50
-checkpoints_dir: /kaggle/working/checkpoints
+checkpoints_dir: /checkpoints
 pretrained_backbone: False
 anchors_path: anchors/cifar100_anchors.pkl
 lr: 0.05

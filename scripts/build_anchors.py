@@ -10,16 +10,73 @@ import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+import os
+import shutil
+
+
+def prepare_tinyimagenet(root="data/tiny-imagenet-200"):
+    val_dir = os.path.join(root, 'val')
+    formatted_dir = os.path.join(val_dir, 'images_formatted')
+    labels_path = os.path.join(os.path.dirname(root), 'tiny_imagenet_labels.txt')
+    train_dir = os.path.join(root, 'train')
+
+    if not os.path.exists(labels_path):
+        print("Creating TinyImageNet labels file...")
+        words_file = os.path.join(root, 'words.txt')
+
+        if os.path.exists(words_file) and os.path.exists(train_dir):
+            words_dict = {}
+            with open(words_file, 'r') as f:
+                for line in f:
+                    parts = line.strip().split('\t')
+                    if len(parts) >= 2:
+                        words_dict[parts[0]] = parts[1].split(',')[0]
+
+            classes = sorted(os.listdir(train_dir))
+            human_labels = [words_dict.get(c, c) for c in classes]
+
+            with open(labels_path, 'w') as f:
+                f.write('\n'.join(human_labels))
+            print(f"Saved 200 clean labels to {labels_path}")
+    if not os.path.exists(formatted_dir):
+        print("Formatting TinyImageNet validation directory...")
+        val_annotations_path = os.path.join(val_dir, 'val_annotations.txt')
+
+        if os.path.exists(val_annotations_path):
+            os.makedirs(formatted_dir, exist_ok=True)
+            classes = sorted(os.listdir(train_dir))
+            for c in classes:
+                os.makedirs(os.path.join(formatted_dir, c), exist_ok=True)
+            with open(val_annotations_path, 'r') as f:
+                for line in f:
+                    parts = line.strip().split('\t')
+                    if len(parts) >= 2:
+                        img_file, cls = parts[0], parts[1]
+                        src = os.path.join(val_dir, 'images', img_file)
+                        dst = os.path.join(formatted_dir, cls, img_file)
+                        if os.path.exists(src):
+                            shutil.move(src, dst)
+            print("Formatted Validation Directory Successfully!")
+        else:
+            print("val_annotations.txt not found, skip formatting.")
+
 
 def ensure_labels_file(labels_file):
     p = Path(labels_file)
     if not p.exists():
-        print("Labels file not found. Creating from CIFAR100 dataset...")
-        data_dir = str(PROJECT_ROOT / "data")
-        ds = CIFAR100(root=data_dir, train=True, download=False)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with open(p, "w") as f:
-            f.write("\n".join(ds.classes))
+        print(f"Labels file not found at {labels_file}.")
+        if 'tiny' in labels_file.lower():
+            print("Creating from TinyImageNet dataset...")
+            data_dir = str(PROJECT_ROOT / "data/tiny-imagenet-200")
+            prepare_tinyimagenet(data_dir)
+        else:
+            print("Creating from CIFAR100 dataset...")
+            data_dir = str(PROJECT_ROOT / "data")
+            ds = CIFAR100(root=data_dir, train=True, download=False)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with open(p, "w") as f:
+                f.write("\n".join(ds.classes))
+
         print("Saved labels to", labels_file)
 
 
