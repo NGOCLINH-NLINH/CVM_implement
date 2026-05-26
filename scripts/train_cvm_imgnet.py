@@ -462,7 +462,7 @@ def main(cfg):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='configs/cifar100_config.yaml')
+    parser.add_argument('--config', type=str, default='configs/original_2000_config.yaml')
     parser.add_argument('--exp-name', type=str, default='LoRA_ACVM')
     args = parser.parse_args()
 

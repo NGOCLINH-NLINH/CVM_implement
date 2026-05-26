@@ -160,6 +160,7 @@ def triplet_loss_hardest_neg(emb, pos_emb, labels, anchors_tensor, seen_indices,
 
     return hardest_losses.mean()
 
+
 def semantic_distance_loss(emb, emb_prev, old_anchor_matrix, reduction='mean'):
     if old_anchor_matrix is None or old_anchor_matrix.shape[0] == 0:
         return torch.tensor(0.0, device=emb.device)

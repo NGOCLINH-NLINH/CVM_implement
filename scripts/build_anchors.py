@@ -50,36 +50,10 @@ def build_anchors(labels_file, out_path, model_name='sentence-transformers/all-M
     print(f"\n[+] Saved {len(anchors)} anchors at: {out_path}")
 
 
-def analyze_anchors(pkl_path):
-    print(f"[*] Reading anchors file from: {pkl_path}")
-    with open(pkl_path, 'rb') as f:
-        anchors = pickle.load(f)
-
-    keys = list(anchors.keys())
-    mat = torch.tensor([anchors[k] for k in keys])
-    sim_matrix = mat @ mat.t()
-
-    print("\n=== TOP 3 NEARESR ANCHORS ===")
-    sim_matrix.fill_diagonal_(-1.0)
-
-    for i in range(3):
-        max_val = torch.max(sim_matrix)
-        idx = (sim_matrix == max_val).nonzero(as_tuple=True)
-        class_A = keys[idx[0][0]]
-        class_B = keys[idx[1][0]]
-
-        print(f"{i + 1}. '{class_A}' and '{class_B}' - Similarity: {max_val.item():.4f}")
-        sim_matrix[idx[0][0], idx[1][0]] = -1.0
-        sim_matrix[idx[1][0], idx[0][0]] = -1.0
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--labels-file', type=str, default=str(PROJECT_ROOT / 'data/cifar100_labels.txt'))
     parser.add_argument('--out', type=str, default=str(PROJECT_ROOT / 'anchors/cifar100_anchors.pkl'))
     parser.add_argument('--model', type=str, default='sentence-transformers/all-MiniLM-L6-v2')
-    parser.add_argument('--analyze-only', action='store_true', help="khong can build lai")
     args = parser.parse_args()
-    if not args.analyze_only:
-        build_anchors(args.labels_file, args.out, args.model)
-    analyze_anchors(args.out)
+    build_anchors(args.labels_file, args.out, args.model)

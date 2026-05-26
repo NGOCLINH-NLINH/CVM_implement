@@ -423,8 +423,7 @@ def main(cfg):
             if i_task > t:
                 per_task_accs.append(None)
             else:
-                acc_old_task = evaluate_task_seen_anchors(model, test_full, t_classes, seen_inds, anchors_tensor,
-                                                          device)
+                acc_old_task = evaluate_task_seen_anchors(model, test_full, t_classes, seen_inds, anchors_tensor, device)
                 per_task_accs.append(acc_old_task)
                 print(f"  -> Acc on Task {i_task} (Classes {min(t_classes)}-{max(t_classes)}): {acc_old_task:.4f}")
         eval_history.append(per_task_accs)
@@ -481,8 +480,8 @@ def main(cfg):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='configs/cifar100_config.yaml')
-    parser.add_argument('--exp-name', type=str, default='LoRA_ACVM')
+    parser.add_argument('--config', type=str, default='configs/original_2000_config.yaml')
+    parser.add_argument('--exp-name', type=str, default='ACVM')
     args = parser.parse_args()
 
     with open(args.config) as f:
