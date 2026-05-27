@@ -408,14 +408,7 @@ def adaptive_margin_triplet_loss_k_negs(emb, pos, neg_k, base_margin=0.1, reduct
     loss_matrix = F.relu(sim_neg - sim_pos + adaptive_margin)
     loss_per_sample = loss_matrix.mean(dim=1)
 
-    if reduction == "none":
-        return loss_per_sample
-    elif reduction == "mean":
-        return loss_per_sample.mean()
-    elif reduction == "sum":
-        return loss_per_sample.sum()
-    else:
-        return loss_matrix
+    return loss_per_sample
 
 def get_semantic_mask(batch_anchors, hash_mat, sparsity=0.4):
     h = torch.matmul(batch_anchors, hash_mat)
