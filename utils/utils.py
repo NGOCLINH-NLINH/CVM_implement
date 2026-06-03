@@ -1,4 +1,3 @@
-# utils.py
 import os
 
 import torch
@@ -530,3 +529,121 @@ class HerdingBuffer:
 
     def __len__(self):
         return sum([len(v) for v in self.memory.values()])
+
+
+def make_aircraft_tasks(num_tasks, batch_size, augment=True):
+    # resize to 32x32 to match ResNet18 custom backbone
+    norm = transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+
+    if augment:
+        transform_train_aug = transforms.Compose([
+            transforms.Resize((32, 32)),
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            norm
+        ])
+    else:
+        transform_train_aug = transforms.Compose([
+            transforms.Resize((32, 32)),
+            transforms.ToTensor(),
+            norm
+        ])
+
+    transform_raw = transforms.Compose([
+        transforms.Resize((32, 32)),
+        transforms.ToTensor()
+    ])
+
+    transform_test = transforms.Compose([
+        transforms.Resize((32, 32)),
+        transforms.ToTensor(),
+        norm
+    ])
+
+    from torchvision.datasets import FGVCAircraft
+    train_full_raw = FGVCAircraft(root="data", split='trainval', download=True, transform=None)
+    test_full = FGVCAircraft(root="data", split='test', download=True, transform=transform_test)
+
+    train_dataset_wrapper = DualTransformDataset(train_full_raw, transform_train_aug, transform_raw)
+
+    classes = train_full_raw.classes
+    num_classes = len(classes)
+    per_task = num_classes // num_tasks
+    tasks = []
+
+    all_targets = np.array(train_full_raw._labels)
+    all_test_targets = np.array(test_full._labels)
+
+    for t in range(num_tasks):
+        start = t * per_task
+        end = start + per_task if t < num_tasks - 1 else num_classes
+
+        train_idx = np.where((all_targets >= start) & (all_targets < end))[0]
+        test_idx = np.where((all_test_targets >= start) & (all_test_targets < end))[0]
+
+        train_subset = Subset(train_dataset_wrapper, train_idx)
+        test_subset = Subset(test_full, test_idx)
+        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=4)
+        test_loader = DataLoader(test_subset, batch_size=batch_size, shuffle=False, num_workers=4)
+        tasks.append((train_loader, test_loader, list(range(start, end))))
+
+    return tasks, classes
+
+
+def make_gtsrb_tasks(num_tasks, batch_size, augment=True):
+    norm = transforms.Normalize((0.3337, 0.3064, 0.3171), (0.2672, 0.2564, 0.2629))
+
+    if augment:
+        transform_train_aug = transforms.Compose([
+            transforms.Resize((32, 32)),
+            transforms.RandomCrop(32, padding=4),
+            transforms.ToTensor(),
+            norm
+        ])
+    else:
+        transform_train_aug = transforms.Compose([
+            transforms.Resize((32, 32)),
+            transforms.ToTensor(),
+            norm
+        ])
+
+    transform_raw = transforms.Compose([
+        transforms.Resize((32, 32)),
+        transforms.ToTensor()
+    ])
+
+    transform_test = transforms.Compose([
+        transforms.Resize((32, 32)),
+        transforms.ToTensor(),
+        norm
+    ])
+
+    from torchvision.datasets import GTSRB
+    train_full_raw = GTSRB(root="data", split='train', download=True, transform=None)
+    test_full = GTSRB(root="data", split='test', download=True, transform=transform_test)
+
+    train_dataset_wrapper = DualTransformDataset(train_full_raw, transform_train_aug, transform_raw)
+
+    num_classes = 43
+    classes = [str(i) for i in range(num_classes)]
+    per_task = num_classes // num_tasks
+    tasks = []
+
+    all_targets = np.array([lbl for _, lbl in train_full_raw._samples])
+    all_test_targets = np.array([lbl for _, lbl in test_full._samples])
+
+    for t in range(num_tasks):
+        start = t * per_task
+        end = start + per_task if t < num_tasks - 1 else num_classes
+
+        train_idx = np.where((all_targets >= start) & (all_targets < end))[0]
+        test_idx = np.where((all_test_targets >= start) & (all_test_targets < end))[0]
+
+        train_subset = Subset(train_dataset_wrapper, train_idx)
+        test_subset = Subset(test_full, test_idx)
+        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=4)
+        test_loader = DataLoader(test_subset, batch_size=batch_size, shuffle=False, num_workers=4)
+        tasks.append((train_loader, test_loader, list(range(start, end))))
+
+    return tasks, classes

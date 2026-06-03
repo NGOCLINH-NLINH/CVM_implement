@@ -5,7 +5,7 @@ from sentence_transformers import SentenceTransformer
 import pickle
 from pathlib import Path
 from tqdm import tqdm
-from torchvision.datasets import CIFAR100
+from torchvision.datasets import CIFAR100, FGVCAircraft
 import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -65,15 +65,46 @@ def ensure_labels_file(labels_file):
     p = Path(labels_file)
     if not p.exists():
         print(f"Labels file not found at {labels_file}.")
+        p.parent.mkdir(parents=True, exist_ok=True)
+
         if 'tiny' in labels_file.lower():
             print("Creating from TinyImageNet dataset...")
             data_dir = str(PROJECT_ROOT / "data/tiny-imagenet-200")
             prepare_tinyimagenet(data_dir)
+
+        elif 'aircraft' in labels_file.lower():
+            print("Creating from FGVC Aircraft dataset...")
+            data_dir = str(PROJECT_ROOT / "data")
+            ds = FGVCAircraft(root=data_dir, split='train', download=True)
+            aircraft_classes = [f"{c} aircraft" for c in ds.classes]
+            with open(p, "w") as f:
+                f.write("\n".join(aircraft_classes))
+
+        elif 'gtsrb' in labels_file.lower():
+            print("Creating from GTSRB dataset...")
+            base_gtsrb = [
+                "speed limit 20", "speed limit 30", "speed limit 50", "speed limit 60",
+                "speed limit 70", "speed limit 80", "end of speed limit 80", "speed limit 100",
+                "speed limit 120", "no passing", "no passing for vehicles over 3.5 metric tons",
+                "right-of-way at the next intersection", "priority road", "yield", "stop",
+                "no vehicles", "vehicles over 3.5 metric tons prohibited", "no entry",
+                "general caution", "dangerous curve to the left", "dangerous curve to the right",
+                "double curve", "bumpy road", "slippery road", "road narrows on the right",
+                "road work", "traffic signals", "pedestrians", "children crossing",
+                "bicycles crossing", "beware of ice or snow", "wild animals crossing",
+                "end of all speed and passing limits", "turn right ahead", "turn left ahead",
+                "ahead only", "go straight or right", "go straight or left", "keep right",
+                "keep left", "roundabout mandatory", "end of no passing",
+                "end of no passing by vehicles over 3.5 metric tons"
+            ]
+            gtsrb_classes = [f"{lbl} traffic sign" for lbl in base_gtsrb]
+            with open(p, "w") as f:
+                f.write("\n".join(gtsrb_classes))
+
         else:
             print("Creating from CIFAR100 dataset...")
             data_dir = str(PROJECT_ROOT / "data")
             ds = CIFAR100(root=data_dir, train=True, download=False)
-            p.parent.mkdir(parents=True, exist_ok=True)
             with open(p, "w") as f:
                 f.write("\n".join(ds.classes))
 
