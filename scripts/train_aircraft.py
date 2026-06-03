@@ -29,8 +29,8 @@ from utils.utils import load_anchors, ReservoirBuffer, triplet_loss_emb, semanti
 
 norm = transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
 replay_transform = transforms.Compose([
-    transforms.Resize((32, 32)),
-    transforms.RandomCrop(32, padding=4),
+    transforms.Resize((256, 256)),
+    transforms.RandomCrop(224),
     transforms.RandomHorizontalFlip(),
     norm
 ])
@@ -199,7 +199,7 @@ def main(cfg):
     anchor_keys, anchors_tensor = load_anchors(cfg['anchors_path'], device=device)
     print("Loaded anchors:", len(anchor_keys))
 
-    model = ResNetCVM(out_dim=cfg['out_dim'], pretrained=cfg.get('pretrained_backbone', False)).to(device)
+    model = ResNetCVM(out_dim=cfg['out_dim'], pretrained=cfg.get('pretrained_backbone', False), is_cifar=False).to(device)
     prev_model = None
 
     buffer = ReservoirBuffer(capacity=cfg['memory_size'], seed=cfg.get('seed', 1234))

@@ -532,31 +532,30 @@ class HerdingBuffer:
 
 
 def make_aircraft_tasks(num_tasks, batch_size, augment=True):
-    # resize to 32x32 to match ResNet18 custom backbone
     norm = transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
 
     if augment:
         transform_train_aug = transforms.Compose([
-            transforms.Resize((32, 32)),
-            transforms.RandomCrop(32, padding=4),
+            transforms.Resize((256, 256)),
+            transforms.RandomCrop(224),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             norm
         ])
     else:
         transform_train_aug = transforms.Compose([
-            transforms.Resize((32, 32)),
+            transforms.Resize((224, 224)),
             transforms.ToTensor(),
             norm
         ])
 
     transform_raw = transforms.Compose([
-        transforms.Resize((32, 32)),
+        transforms.Resize((224, 224)),
         transforms.ToTensor()
     ])
 
     transform_test = transforms.Compose([
-        transforms.Resize((32, 32)),
+        transforms.Resize((224, 224)),
         transforms.ToTensor(),
         norm
     ])
