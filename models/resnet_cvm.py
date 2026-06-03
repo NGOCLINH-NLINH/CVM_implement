@@ -7,7 +7,9 @@ import torch.nn.functional as F
 class ResNetCVM(nn.Module):
     def __init__(self, out_dim=384, pretrained=False, is_cifar=True):
         super().__init__()
-        base = models.resnet18(weights=None)
+
+        weights = models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None
+        base = models.resnet18(weights=weights)
 
         if is_cifar:
             base.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
