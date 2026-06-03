@@ -199,7 +199,7 @@ def main(cfg):
     anchor_keys, anchors_tensor = load_anchors(cfg['anchors_path'], device=device)
     print("Loaded anchors:", len(anchor_keys))
 
-    model = ResNetCVM(out_dim=cfg['out_dim'], pretrained=cfg.get('pretrained_backbone', False), is_cifar=False).to(device)
+    model = ResNetCVM(out_dim=cfg['out_dim'], pretrained=cfg.get('pretrained_backbone', False), is_cifar=cfg.get('pretrained_backbone', False)).to(device)
     prev_model = None
 
     buffer = ReservoirBuffer(capacity=cfg['memory_size'], seed=cfg.get('seed', 1234))
