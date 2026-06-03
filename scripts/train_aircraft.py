@@ -181,7 +181,7 @@ def main(cfg):
     tasks, class_names = make_aircraft_tasks(cfg['num_tasks'], cfg['batch_size'], augment=True)
 
     test_transform = transforms.Compose([
-        transforms.Resize((32, 32)),
+        transforms.Resize((224, 224)),
         transforms.ToTensor(),
         norm
     ])
