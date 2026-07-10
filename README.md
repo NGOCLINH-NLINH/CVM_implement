@@ -29,14 +29,14 @@
 * Notebook content:
 ```bash
 # Clone repository
-!git clone --branch testtesttest https://github.com/NGOCLINH-NLINH/CVM_implement.git
-%cd CVM_implement
+!git clone --branch testtesttest https://github.com/NGOCLINH-NLINH/SCALA.git
+%cd SCALA
 !pip install -q timm==0.6.13 sentence-transformers
 
 # Prepare data directory
-!mkdir -p /kaggle/working/CVM_implement/data/
+!mkdir -p /kaggle/working/SCALA/data/
 !mkdir -p /kaggle/working/data/
-!cp -r /kaggle/input/datasets/[kaggle username]/cifar100/cifar-100-python /kaggle/working/CVM_implement/data/
+!cp -r /kaggle/input/datasets/[kaggle username]/cifar100/cifar-100-python /kaggle/working/SCALA/data/
 !cp -r /kaggle/input/datasets/[kaggle username]/cifar100/cifar-100-python /kaggle/working/data/
 
 # Build anchors
@@ -86,14 +86,14 @@ alpha_cmm: 0.4
 * Notebook content:
 ```bash
 # Clone repository
-!git clone --branch testtesttest https://github.com/NGOCLINH-NLINH/CVM_implement.git
-%cd CVM_implement
+!git clone --branch testtesttest https://github.com/NGOCLINH-NLINH/SCALA.git
+%cd SCALA
 !pip install -q timm==0.6.13 sentence-transformers
 
 # Prepare data directory
-!mkdir -p /kaggle/working/CVM_implement/data/
+!mkdir -p /kaggle/working/SCALA/data/
 !mkdir -p /kaggle/working/data/
-!cp -r /kaggle/input/datasets/[kaggle username]/[dataset name]/tiny-imagenet-200 /kaggle/working/CVM_implement/data/
+!cp -r /kaggle/input/datasets/[kaggle username]/[dataset name]/tiny-imagenet-200 /kaggle/working/SCALA/data/
 !cp -r /kaggle/input/datasets/[kaggle username]/[dataset name]/tiny-imagenet-200 /kaggle/working/data/
 
 # Build anchors

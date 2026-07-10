@@ -1,3 +1,4 @@
+import argparse
 import os
 import numpy as np
 import matplotlib.pyplot as plt
@@ -69,12 +70,16 @@ def plot_tsne_comparison_grid(cvm_dir, acvm_dir, tasks=[0, 4, 9], save_path="tsn
 
 
 if __name__ == "__main__":
-    CVM_FEATURES_DIR = "checkpoints/tsne_data_CVM"
-    ACVM_FEATURES_DIR = "checkpoints/tsne_data_ACVM"
+    parser = argparse.ArgumentParser(description="Plot t-SNE comparison grid")
+    parser.add_argument('--cvm_dir', type=str, required=True, help="Path to CVM baseline features")
+    parser.add_argument('--acvm_dir', type=str, required=True, help="Path to ACVM features")
+    parser.add_argument('--out', type=str, default="tsne_comparison_grid.png", help="Output image path")
+
+    args = parser.parse_args()
 
     plot_tsne_comparison_grid(
-        cvm_dir=CVM_FEATURES_DIR,
-        acvm_dir=ACVM_FEATURES_DIR,
+        cvm_dir=args.cvm_dir,
+        acvm_dir=args.acvm_dir,
         tasks=[0, 4, 9],
-        save_path="results/tsne_comparison_grid.png"
+        save_path=args.out
     )
