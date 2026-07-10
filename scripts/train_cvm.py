@@ -4,6 +4,8 @@ import os
 from sklearn.linear_model import LogisticRegression
 from torch import nn
 
+from scripts.plot_tsne_grid import plot_tsne_comparison_grid
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import argparse
@@ -495,14 +497,18 @@ def main(cfg):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='configs/original_2000_config.yaml')
-    parser.add_argument('--exp-name', type=str, default='ACVM')
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Plot t-SNE comparison grid")
+    parser.add_argument('--cvm_dir', type=str, required=True, help="Path to CVM baseline features")
+    parser.add_argument('--acvm_dir', type=str, required=True, help="Path to ACVM features")
+    parser.add_argument('--out', type=str, default="tsne_comparison_grid.png", help="Output image path")
+
     args = parser.parse_args()
 
-    with open(args.config) as f:
-        cfg = yaml.safe_load(f)
-
-    cfg['exp_name'] = args.exp_name
-
-    main(cfg)
+    plot_tsne_comparison_grid(
+        cvm_dir=args.cvm_dir,
+        acvm_dir=args.acvm_dir,
+        tasks=[0, 4, 9],
+        save_path=args.out
+    )
