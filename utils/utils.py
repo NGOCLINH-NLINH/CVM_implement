@@ -590,6 +590,47 @@ def make_aircraft_tasks(num_tasks, batch_size, augment=True):
     return tasks, classes
 
 
+import os
+import torch
+import numpy as np
+from torch.utils.data import DataLoader, Subset
+
+
+def save_features_for_tsne(model, test_full, seen_indices, anchors_tensor, task_id, device, save_path):
+    model.eval()
+
+    idxs = [i for i, (_, lbl) in enumerate(test_full) if lbl in seen_indices]
+    if len(idxs) == 0:
+        return
+
+    loader = DataLoader(Subset(test_full, idxs), batch_size=256, shuffle=False, num_workers=2)
+
+    all_embs = []
+    all_labels = []
+
+    with torch.no_grad():
+        for images, labels in loader:
+            images = images.to(device)
+            emb = model(images)
+            all_embs.append(emb.cpu().numpy())
+            all_labels.append(labels.numpy())
+
+    all_embs = np.concatenate(all_embs, axis=0)
+    all_labels = np.concatenate(all_labels, axis=0)
+    seen_anchors = anchors_tensor[seen_indices].cpu().numpy()
+
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+    np.savez_compressed(
+        save_path,
+        embs=all_embs,
+        labels=all_labels,
+        anchors=seen_anchors,
+        seen_indices=np.array(seen_indices)
+    )
+    print(f"[+] Saved features for t-SNE at {save_path}")
+
+
 def make_gtsrb_tasks(num_tasks, batch_size, augment=True):
     norm = transforms.Normalize((0.3337, 0.3064, 0.3171), (0.2672, 0.2564, 0.2629))
 

@@ -406,6 +406,22 @@ def main(cfg):
         seen_acc_history.append(acc_all_seen)
         print(f"Acc on all seen classes after task {t}: {acc_all_seen:.4f}")
 
+        from utils.utils import save_features_for_tsne
+        if t in [0, 4, cfg['num_tasks'] - 1]:
+            method_name = cfg.get('exp_name', 'CVM')
+            tsne_dir = os.path.join(cfg['checkpoints_dir'], f"tsne_data_{method_name}")
+            tsne_path = os.path.join(tsne_dir, f"features_task_{t}.npz")
+
+            save_features_for_tsne(
+                model=model,
+                test_full=test_full,
+                seen_indices=seen_inds,
+                anchors_tensor=anchors_tensor,
+                task_id=t,
+                device=device,
+                save_path=tsne_path
+            )
+
         unseen_inds = [i for i in range(len(anchor_keys)) if i not in seen_inds]
         if len(unseen_inds) > 0:
             zs = zero_shot_eval(model, anchors_tensor, unseen_inds, test_full, device)
